@@ -20,3 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipeline, through the API, to the frontend (#1).
 - Next.js app scaffold (Next.js 16, React 19, TypeScript, Tailwind CSS 4,
   ESLint).
+  - Added a CSV-to-GeoJSON dataset build test using Census-style tract IDs (`scripts/build-dataset.ts`),
+  including dummy origin/destination flow data, tract centroid coordinates, validation,
+  and generated map-ready GeoJSON output.
