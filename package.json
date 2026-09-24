@@ -11,6 +11,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "csv-parse": "^7.0.2",
     "maplibre-gl": "^6.11.2",
     "next": "16.3.5",
     "react": "19.2.8",
@@ -25,6 +26,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
