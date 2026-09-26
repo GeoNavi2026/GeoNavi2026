@@ -24,6 +24,10 @@ export default function Explorer() {
   const [datasetError, setDatasetError] = useState<{ id: string; message: string } | null>(
     null
   );
+  const [uploadedDataset, setUploadedDataset] =
+    useState<DatasetResponse | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Load the catalog once and select the first dataset.
   useEffect(() => {
@@ -53,22 +57,49 @@ export default function Explorer() {
     return () => controller.abort();
   }, [selectedId]);
 
-  const error =
-    catalogError ?? (datasetError?.id === selectedId ? datasetError.message : null);
+  const error = uploadError ?? catalogError ??
+    (datasetError?.id === selectedId ? datasetError.message : null);
   const loading = selectedId !== null && dataset?.meta.id !== selectedId && !error;
-  const meta = dataset?.meta;
+
+  const activeDataset = uploadedDataset ?? dataset;
+  const meta = activeDataset?.meta;
 
   return (
     <div className="flex h-dvh flex-col md:flex-row">
       <aside className="flex max-h-[40dvh] shrink-0 flex-col gap-4 overflow-y-auto border-b border-zinc-200 p-4 md:max-h-none md:w-80 md:border-r md:border-b-0 dark:border-zinc-800">
         <h1 className="text-xl font-semibold tracking-tight">GeoNavi</h1>
+        <input
+          type="file"
+          accept=".csv,text/csv"
+          disabled={uploading}
+          onChange={async (event) => {
+            const input = event.currentTarget;
+            const file = input.files?.[0];
+            if (!file) return;
 
+            setUploading(true);
+            setUploadError(null);
+
+            try {
+              const { processUpload } = await import("@/lib/process-upload");
+              setUploadedDataset(await processUpload(file));
+            } catch (error) {
+              setUploadError(error instanceof Error ? error.message : String(error));
+            } finally {
+              setUploading(false);
+              input.value = "";
+            }
+          }}
+        />
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-zinc-600 dark:text-zinc-400">Dataset</span>
           <select
             className="rounded-md border border-zinc-300 bg-white px-2 py-1.5 dark:border-zinc-700 dark:bg-zinc-900"
             value={selectedId ?? ""}
-            onChange={(e) => setSelectedId(e.target.value)}
+            onChange={(e) => {
+              setUploadedDataset(null);
+              setSelectedId(e.target.value);
+            }}
             disabled={!catalog?.length}
           >
             {!catalog && <option value="">Loading…</option>}
@@ -82,9 +113,7 @@ export default function Explorer() {
         </label>
 
         {error && (
-          <p className="rounded-md bg-red-50 p-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
-            {error}
-          </p>
+          <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
         )}
 
         {loading && <p className="text-sm text-zinc-500">Loading dataset…</p>}
@@ -113,7 +142,7 @@ export default function Explorer() {
       </aside>
 
       <main className="relative min-h-0 flex-1">
-        <MapView dataset={dataset} />
+        <MapView dataset={activeDataset} />
       </main>
     </div>
   );
