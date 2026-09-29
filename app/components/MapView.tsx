@@ -53,6 +53,13 @@ function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
+function propertyRows(properties: Record<string, unknown> | undefined) {
+  return Object.entries(properties ?? {})
+    .filter(([key]) => !["id", "name", "source", "target", "weight", "norm"].includes(key))
+    .map(([key, value]) => `<br/>${escapeHtml(key)}: ${escapeHtml(String(value))}`)
+    .join("");
+}
+
 export default function MapView({ dataset }: { dataset: DatasetResponse | null }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -127,7 +134,11 @@ export default function MapView({ dataset }: { dataset: DatasetResponse | null }
       map.on("click", "nodes", (e: MapLayerMouseEvent) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
-        popup(e, `<strong>${escapeHtml(String(p.name))}</strong><br/>${escapeHtml(String(p.id))}`);
+        popup(
+          e,
+          `<strong>${escapeHtml(String(p.name))}</strong><br/>${escapeHtml(String(p.id))}` +
+            propertyRows(p)
+        );
       });
 
       map.on("click", "edges-hit", (e: MapLayerMouseEvent) => {
@@ -138,7 +149,8 @@ export default function MapView({ dataset }: { dataset: DatasetResponse | null }
         popup(
           e,
           `<strong>${escapeHtml(String(p.sourceName))} → ${escapeHtml(String(p.targetName))}</strong>` +
-            `<br/>Weight: ${Number(p.weight).toLocaleString()}`
+            `<br/>Weight: ${Number(p.weight).toLocaleString()}` +
+            propertyRows(p)
         );
       });
 

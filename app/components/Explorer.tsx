@@ -70,7 +70,7 @@ export default function Explorer() {
         <h1 className="text-xl font-semibold tracking-tight">GeoNavi</h1>
         <input
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.json,.geojson,text/csv,application/json,application/geo+json"
           disabled={uploading}
           onChange={async (event) => {
             const input = event.currentTarget;
