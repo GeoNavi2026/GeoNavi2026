@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
+import { ensureDataset } from "@/lib/dataset-selection";
 
 const dataDir = join(process.cwd(), "data/test/output");
 
@@ -12,6 +13,7 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  ensureDataset();
   const { id } = await params;
   const filename = idToFile[id];
 
