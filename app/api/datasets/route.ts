@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { catalog } from "@/lib/sample-data";
+import { getCatalog } from "@/lib/datasets";
 
 export function GET() {
-  return NextResponse.json(catalog);
+  return NextResponse.json(getCatalog());
 }
