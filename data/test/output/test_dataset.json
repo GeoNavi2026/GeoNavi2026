@@ -1,0 +1,25 @@
+{
+  "meta": {
+    "id": "csv-test",
+    "name": "Alachua County Commute Flows",
+    "description": "OD flows between census tracts, converted from CSV.",
+    "source": "data/test/flow_demo.csv",
+    "region": "Alachua County, FL",
+    "temporal": false,
+    "nodeCount": 4,
+    "edgeCount": 4,
+    "bbox": [-82.4102, 29.62, -82.3248, 29.6789]
+  },
+  "nodes": [
+    { "id": "12001000201", "coords": [-82.3248, 29.6516], "name": "12001000201" },
+    { "id": "12001000300", "coords": [-82.4102, 29.6789], "name": "12001000300" },
+    { "id": "12001000400", "coords": [-82.351, 29.642], "name": "12001000400" },
+    { "id": "12001000500", "coords": [-82.37, 29.62], "name": "12001000500" }
+  ],
+  "edges": [
+    { "id": "12001000201->12001000400-0", "source": "12001000201", "target": "12001000400", "weight": 5 },
+    { "id": "12001000300->12001000400-1", "source": "12001000300", "target": "12001000400", "weight": 20 },
+    { "id": "12001000500->12001000201-2", "source": "12001000500", "target": "12001000201", "weight": 3 },
+    { "id": "12001000400->12001000201-3", "source": "12001000400", "target": "12001000201", "weight": 12 }
+  ]
+}
