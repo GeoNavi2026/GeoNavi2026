@@ -3,7 +3,9 @@ import type { ColumnMeta } from "./types";
 /** Maximum number of distinct string values before we stop listing categories. */
 const MAX_CATEGORIES = 50;
 
-type PropertiesHolder = { properties?: Record<string, number | string> };
+type PropertiesHolder = {
+  properties?: Record<string, number | string | boolean | null>;
+};
 
 /**
  * Scan an array of nodes or edges and return metadata for every property key

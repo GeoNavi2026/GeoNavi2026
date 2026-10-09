@@ -21,7 +21,7 @@ export interface Node {
   /** [longitude, latitude] � GeoJSON order */
   coords: [number, number];
   name?: string;
-  properties?: Record<string, number | string>;
+  properties?: Record<string, number | string | boolean | null>;
 }
 
 export interface Edge {
@@ -34,7 +34,7 @@ export interface Edge {
   weight: number;
   /** ISO 8601 timestamp or bucket label, for time-aware views */
   t?: string;
-  properties?: Record<string, number | string>;
+  properties?: Record<string, number | string | boolean | null>;
 }
 
 export interface DatasetMeta {
