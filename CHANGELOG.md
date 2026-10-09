@@ -9,9 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Browser-side spatial flow CSV uploads using DuckDB-Wasm, with endpoint
-  coordinate validation before rendering in the map. Currently, the feature is hardcoded to accomodate the file ctpp2017_2021_FL_spatial.csv.
-- Sidebar button to upload demo file
 - Map explorer UI: an OpenStreetMap base map (MapLibre GL JS) that loads the
   dataset catalog, draws the selected dataset's nodes and weighted edges, and
   shows details in a side panel and on click.
@@ -23,11 +20,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pipeline, through the API, to the frontend (#1).
 - Next.js app scaffold (Next.js 16, React 19, TypeScript, Tailwind CSS 4,
   ESLint).
-  - Added a CSV-to-GeoJSON dataset build test using Census-style tract IDs (`scripts/build-dataset.ts`),
-  including dummy origin/destination flow data, tract centroid coordinates, validation,
-  and generated map-ready GeoJSON output.
-
-### Changed
-
-- Calculate maximum edge weight iteratively so GeoJSON conversion can handle
-  large flow datasets without exceeding JavaScript's argument limit.

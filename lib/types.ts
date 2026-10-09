@@ -1,5 +1,21 @@
 // Shared data contract between the API, the pipeline, and the frontend.
 
+/** Describes a single property column found on nodes or edges. */
+export interface ColumnMeta {
+  /** Property key as it appears in `properties`. */
+  key: string;
+  /** "number" or "string" — inferred from the first non-null value. */
+  type: "number" | "string";
+  /** Human-readable label (defaults to `key` when absent). */
+  label?: string;
+  /** Minimum value when type is "number". */
+  min?: number;
+  /** Maximum value when type is "number". */
+  max?: number;
+  /** Unique values when type is "string" and cardinality is low. */
+  categories?: string[];
+}
+
 export interface Node {
   id: string;
   /** [longitude, latitude] � GeoJSON order */
@@ -35,6 +51,10 @@ export interface DatasetMeta {
   edgeCount: number;
   /** [minLon, minLat, maxLon, maxLat] */
   bbox: [number, number, number, number];
+  /** Property columns available on nodes. */
+  nodeColumns?: ColumnMeta[];
+  /** Property columns available on edges. */
+  edgeColumns?: ColumnMeta[];
 }
 
 /** GET /api/datasets */

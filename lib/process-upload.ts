@@ -192,10 +192,8 @@ function coordinates(
 }
 
 export async function processUpload(file: File): Promise<DatasetResponse> {
-  if (/\.(geojson|json)$/i.test(file.name)) {
-    return parseJsonDataset(file, JSON.parse(await file.text()));
-  }
-  if (!/\.csv$/i.test(file.name)) {
+  const isJson = /\.(geojson|json)$/i.test(file.name);
+  if (!isJson && !/\.csv$/i.test(file.name)) {
     throw new Error("Unsupported file type. Choose a CSV, JSON, or GeoJSON file.");
   }
 
@@ -213,10 +211,42 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
     const connection = await db.connect();
 
     try {
-      await db.registerFileBuffer(
-        "flows.csv",
-        new Uint8Array(await file.arrayBuffer())
+      const filename = isJson ? "upload.json" : "upload.csv";
+      await db.registerFileBuffer(filename, new Uint8Array(await file.arrayBuffer()));
+
+      if (isJson) {
+        const maximumObjectSize = Math.max(16 * 1024 * 1024, file.size + 1);
+        const result = await connection.query(
+          `SELECT json FROM read_json_objects(
+            '${filename}',
+            format = 'unstructured',
+            maximum_object_size = ${maximumObjectSize}
+          )`
+        );
+        const objects = result.toArray().map((row) => {
+          const value = row.toJSON() as { json?: unknown };
+          if (typeof value.json !== "string") {
+            throw new Error("DuckDB did not return a JSON object for the upload.");
+          }
+          return JSON.parse(value.json) as unknown;
+        });
+        if (objects.length !== 1) {
+          throw new Error("JSON uploads must contain one dataset or GeoJSON object.");
+        }
+        return parseJsonDataset(file, objects[0]);
+      }
+
+      const columns = await connection.query(
+        `DESCRIBE SELECT * FROM read_csv_auto('${filename}', all_varchar = true)`
       );
+      const columnNames = new Set(
+        columns.toArray().map((row) => String((row.toJSON() as { column_name: unknown }).column_name))
+      );
+      const requiredColumns = ["Otract", "Dtract", "EST", "O_lat", "O_lon", "D_lat", "D_lon"];
+      const missingColumns = requiredColumns.filter((column) => !columnNames.has(column));
+      if (missingColumns.length) {
+        throw new Error(`CSV is missing required flow columns: ${missingColumns.join(", ")}.`);
+      }
 
       const result = await connection.query(`
         SELECT
@@ -228,13 +258,13 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
           try_cast(nullif(trim(O_lon), '') AS DOUBLE) AS originLongitude,
           try_cast(nullif(trim(D_lat), '') AS DOUBLE) AS destinationLatitude,
           try_cast(nullif(trim(D_lon), '') AS DOUBLE) AS destinationLongitude
-        FROM read_csv_auto('flows.csv', all_varchar = true)
+        FROM read_csv_auto('${filename}', all_varchar = true)
       `);
 
       const rows = result.toArray().map(
         (row) => row.toJSON() as unknown as CsvRow
       );
-      if (!rows.length) throw new Error("The CSV has no flow rows.");
+      if (!rows.length) throw new Error(`The ${isJson ? "JSON" : "CSV"} file has no rows.`);
 
       const coordinatesByTract = new Map<string, [number, number]>();
       const edges: Edge[] = rows.map((row, index) => {
@@ -291,7 +321,6 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
         coords,
         name: id,
       }));
-      const points = nodes.map(({ coords }) => coords);
 
       return buildDataset(file, nodes, edges, "Flow data loaded from a CSV upload.");
     } finally {
