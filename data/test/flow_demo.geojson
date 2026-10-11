@@ -1,0 +1,53 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": "12001000201",
+      "geometry": { "type": "Point", "coordinates": [-82.3248, 29.6516] },
+      "properties": { "id": "12001000201", "name": "12001000201" }
+    },
+    {
+      "type": "Feature",
+      "id": "12001000300",
+      "geometry": { "type": "Point", "coordinates": [-82.4102, 29.6789] },
+      "properties": { "id": "12001000300", "name": "12001000300" }
+    },
+    {
+      "type": "Feature",
+      "id": "12001000400",
+      "geometry": { "type": "Point", "coordinates": [-82.351, 29.642] },
+      "properties": { "id": "12001000400", "name": "12001000400" }
+    },
+    {
+      "type": "Feature",
+      "id": "12001000500",
+      "geometry": { "type": "Point", "coordinates": [-82.37, 29.62] },
+      "properties": { "id": "12001000500", "name": "12001000500" }
+    },
+    {
+      "type": "Feature",
+      "id": "12001000201->12001000400-0",
+      "geometry": { "type": "LineString", "coordinates": [[-82.3248, 29.6516], [-82.351, 29.642]] },
+      "properties": { "id": "12001000201->12001000400-0", "source": "12001000201", "target": "12001000400", "weight": 5 }
+    },
+    {
+      "type": "Feature",
+      "id": "12001000300->12001000400-1",
+      "geometry": { "type": "LineString", "coordinates": [[-82.4102, 29.6789], [-82.351, 29.642]] },
+      "properties": { "id": "12001000300->12001000400-1", "source": "12001000300", "target": "12001000400", "weight": 20 }
+    },
+    {
+      "type": "Feature",
+      "id": "12001000500->12001000201-2",
+      "geometry": { "type": "LineString", "coordinates": [[-82.37, 29.62], [-82.3248, 29.6516]] },
+      "properties": { "id": "12001000500->12001000201-2", "source": "12001000500", "target": "12001000201", "weight": 3 }
+    },
+    {
+      "type": "Feature",
+      "id": "12001000400->12001000201-3",
+      "geometry": { "type": "LineString", "coordinates": [[-82.351, 29.642], [-82.3248, 29.6516]] },
+      "properties": { "id": "12001000400->12001000201-3", "source": "12001000400", "target": "12001000201", "weight": 12 }
+    }
+  ]
+}

@@ -7,8 +7,8 @@ Types live in `lib/types.ts` and are the source of truth.
 
 | Endpoint | Returns |
 | --- | --- |
-| `GET /api/datasets` | `DatasetMeta[]` — catalog listing |
-| `GET /api/datasets/[id]` | `DatasetResponse` — one dataset with nodes and edges |
+| `GET /api/datasets` | `DatasetMeta[]` ï¿½ catalog listing |
+| `GET /api/datasets/[id]` | `DatasetResponse` ï¿½ one dataset with nodes and edges |
 
 ## Example
 
@@ -23,7 +23,13 @@ Types live in `lib/types.ts` and are the source of truth.
     "temporal": false,
     "nodeCount": 2,
     "edgeCount": 1,
-    "bbox": [-82.42, 29.61, -82.30, 29.69]
+    "bbox": [-82.42, 29.61, -82.30, 29.69],
+    "nodeColumns": [
+      { "key": "population", "type": "number", "min": 1200, "max": 4500 }
+    ],
+    "edgeColumns": [
+      { "key": "mode", "type": "string", "categories": ["car", "transit", "bike"] }
+    ]
   },
   "nodes": [
     { "id": "n1", "coords": [-82.3248, 29.6516], "name": "Tract 1" },
@@ -42,5 +48,9 @@ Types live in `lib/types.ts` and are the source of truth.
 - `t` is optional. Set `meta.temporal` to true when edges carry it.
 - `properties` is a free-form bag for dataset-specific fields. Add to it
   rather than changing the core shape.
+- `nodeColumns` and `edgeColumns` describe the property keys found in the
+  dataset so the frontend can offer column-driven controls (e.g. pick which
+  property maps to edge thickness or colour). They are auto-populated by the
+  API when absent, so pipeline output does not need to include them.
 - Any change to the core shape needs agreement from backend, pipeline, and
   frontend before it lands.
