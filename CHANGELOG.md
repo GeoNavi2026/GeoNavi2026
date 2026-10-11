@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Upload screen at `/` matching the Figma design: dark title card over a globe
+  graphic, a drag-and-drop upload box (CSV, JSON or GeoJSON, up to 50 MB) and a
+  "Try the sample dataset" link.
+- Map screen at `/explore` matching the Figma design: sidebar with the uploaded
+  file's name, row count and column titles (with detected types), node name
+  labels, dark popups, zoom buttons, and a time slider that filters edges by
+  hour of day. The slider only appears when the data has a time column: `t` on
+  JSON/GeoJSON edges, or a CSV column named `t`, `time`, `hour`, `timestamp` or
+  `datetime`, which is tagged "time" in the column list.
 - Map explorer UI: an OpenStreetMap base map (MapLibre GL JS) that loads the
   dataset catalog, draws the selected dataset's nodes and weighted edges, and
   shows details in a side panel and on click.
