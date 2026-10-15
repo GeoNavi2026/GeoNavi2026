@@ -69,12 +69,16 @@ function buildDataset(
       temporal: edges.some((edge) => edge.t !== undefined),
       nodeCount: nodes.length,
       edgeCount: edges.length,
-      bbox: [
-        Math.min(...points.map(([longitude]) => longitude)),
-        Math.min(...points.map(([, latitude]) => latitude)),
-        Math.max(...points.map(([longitude]) => longitude)),
-        Math.max(...points.map(([, latitude]) => latitude)),
-      ],
+      bbox: (() => {
+      let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+      for (const [longitude, latitude] of points) {
+        if (longitude < minLon) minLon = longitude;
+        if (latitude < minLat) minLat = latitude;
+        if (longitude > maxLon) maxLon = longitude;
+        if (latitude > maxLat) maxLat = latitude;
+      }
+      return [minLon, minLat, maxLon, maxLat];
+    })(),
     },
     nodes,
     edges,
