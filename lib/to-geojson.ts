@@ -44,7 +44,7 @@ export function toGeoJson(dataset: DatasetResponse) {
     if (!source || !target) continue;
     edges.features.push({
       type: "Feature",
-      geometry: { type: "LineString", coordinates: [source.coords, target.coords] },
+      geometry: { type: "LineString", coordinates: e.coordinates ?? [source.coords, target.coords] },
       properties: {
         id: e.id,
         source: e.source,

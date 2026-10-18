@@ -23,8 +23,8 @@ export default function Home() {
         </h1>
         <p className="mt-4 max-w-xl text-lg text-zinc-600 dark:text-zinc-400">
           GeoNavi lets you explore origin-destination flow data on an interactive
-          map. Upload your own CSV, JSON, or GeoJSON datasets or browse the
-          built-in catalog.
+          map. Upload CSV, JSON, GeoJSON, KML, GPX, or zipped shapefiles, or
+          browse the built-in catalog.
         </p>
         <div className="mt-8 flex gap-4">
           <Link
@@ -46,8 +46,8 @@ export default function Home() {
           <div>
             <h3 className="font-semibold">Flexible Data</h3>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Supports CTPP commute data, custom CSV, JSON, and GeoJSON
-              FeatureCollections.
+              Supports CTPP commute data, CSV, JSON, GeoJSON, KML, GPX, and
+              zipped point/line shapefiles.
             </p>
           </div>
           <div>

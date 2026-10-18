@@ -69,9 +69,12 @@ export default function Explorer() {
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium text-zinc-600 dark:text-zinc-400">Upload data</span>
+          <span className="text-xs text-zinc-500">
+            CSV, JSON, GeoJSON, KML, GPX, or zipped shapefiles.
+          </span>
           <input
             type="file"
-            accept=".csv,.json,.geojson,text/csv,application/json,application/geo+json"
+            accept=".csv,.json,.geojson,.kml,.gpx,.zip,text/csv,application/json,application/geo+json,application/vnd.google-earth.kml+xml,application/gpx+xml,application/zip"
             disabled={uploading}
             onChange={async (event) => {
               const input = event.currentTarget;

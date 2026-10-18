@@ -1,4 +1,9 @@
 import * as duckdb from "@duckdb/duckdb-wasm";
+import type { Feature } from "geojson";
+import { gpx, kml } from "@tmcw/togeojson";
+import shp from "shpjs";
+import type { FeatureCollection, Geometry } from "geojson";
+import { parseWkbHex } from "./wkb";
 import type { DatasetResponse, Edge, Node } from "./types";
 
 type CsvRow = {
@@ -14,6 +19,7 @@ type CsvRow = {
 
 type Scalar = number | string | boolean | null;
 type JsonObject = Record<string, unknown>;
+type GeoFeatureCollection = FeatureCollection<Geometry | null>;
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -51,6 +57,40 @@ function jsonId(value: unknown, fallback: string) {
     : fallback;
 }
 
+function isFeatureCollection(value: unknown): value is GeoFeatureCollection {
+  return isObject(value) && value.type === "FeatureCollection" && Array.isArray(value.features);
+}
+
+function isWgs84Crs(crs: unknown): boolean {
+  if (crs === null || crs === undefined) return true;
+  if (typeof crs === "string") return /^(?:EPSG:4326|OGC:CRS84)$/i.test(crs);
+  if (!isObject(crs) || !isObject(crs.id)) return false;
+  const authority = crs.id.authority;
+  const code = crs.id.code;
+  return (authority === "EPSG" && (code === 4326 || code === "4326")) ||
+    (authority === "OGC" && code === "CRS84");
+}
+
+function geoParquetFeatures(rows: unknown[], geometryColumn: string): GeoFeatureCollection {
+  const features: Feature[] = rows.map((row, index) => {
+    if (!isObject(row) || typeof row.__geonavi_wkb !== "string") {
+      throw new Error(`GeoParquet row ${index + 1} has no readable WKB geometry.`);
+    }
+    const properties = scalarProperties(
+      Object.fromEntries(
+        Object.entries(row).filter(([key]) => key !== geometryColumn && key !== "__geonavi_wkb")
+      )
+    ) ?? {};
+    return {
+      type: "Feature",
+      id: jsonId(properties.id, `feature-${index}`),
+      geometry: parseWkbHex(row.__geonavi_wkb),
+      properties,
+    };
+  });
+  return { type: "FeatureCollection", features };
+}
+
 function buildDataset(
   file: File,
   nodes: Node[],
@@ -58,7 +98,17 @@ function buildDataset(
   description: string
 ): DatasetResponse {
   if (!nodes.length) throw new Error("The input has no point coordinates.");
-  const points = nodes.map(({ coords }) => coords);
+  const bbox = [Infinity, Infinity, -Infinity, -Infinity] as [number, number, number, number];
+  const includePoint = ([longitude, latitude]: [number, number]) => {
+    bbox[0] = Math.min(bbox[0], longitude);
+    bbox[1] = Math.min(bbox[1], latitude);
+    bbox[2] = Math.max(bbox[2], longitude);
+    bbox[3] = Math.max(bbox[3], latitude);
+  };
+  for (const { coords } of nodes) includePoint(coords);
+  for (const edge of edges) {
+    for (const coords of edge.coordinates ?? []) includePoint(coords);
+  }
   return {
     meta: {
       id: `upload-${crypto.randomUUID()}`,
@@ -69,16 +119,130 @@ function buildDataset(
       temporal: edges.some((edge) => edge.t !== undefined),
       nodeCount: nodes.length,
       edgeCount: edges.length,
-      bbox: [
-        Math.min(...points.map(([longitude]) => longitude)),
-        Math.min(...points.map(([, latitude]) => latitude)),
-        Math.max(...points.map(([longitude]) => longitude)),
-        Math.max(...points.map(([, latitude]) => latitude)),
-      ],
+      bbox,
     },
     nodes,
     edges,
   };
+}
+
+function parseFeatureCollection(
+  file: File,
+  featureCollection: GeoFeatureCollection,
+  description: string
+): DatasetResponse {
+  const nodes: Node[] = [];
+  const nodeById = new Map<string, Node>();
+  const nodeByCoordinate = new Map<string, string>();
+  const edges: Edge[] = [];
+  const edgeIds = new Set<string>();
+  const features = featureCollection.features as unknown[];
+
+  function addNode(candidateId: string, coords: [number, number], properties?: Record<string, Scalar>) {
+    const existing = nodeById.get(candidateId);
+    if (existing) {
+      if (existing.coords[0] !== coords[0] || existing.coords[1] !== coords[1]) {
+        throw new Error(`Point id "${candidateId}" has conflicting coordinates.`);
+      }
+      return candidateId;
+    }
+
+    const node: Node = {
+      id: candidateId,
+      coords,
+      name: typeof properties?.name === "string" ? properties.name : candidateId,
+      properties,
+    };
+    nodes.push(node);
+    nodeById.set(candidateId, node);
+    const coordinateKey = coords.join(",");
+    if (!nodeByCoordinate.has(coordinateKey)) nodeByCoordinate.set(coordinateKey, candidateId);
+    return candidateId;
+  }
+
+  function ensureEndpoint(candidateId: string | undefined, coords: [number, number]) {
+    const coordinateKey = coords.join(",");
+    const id = candidateId ?? nodeByCoordinate.get(coordinateKey) ?? `endpoint-${coordinateKey}`;
+    return addNode(id, coords);
+  }
+
+  for (const [index, feature] of features.entries()) {
+    if (!isObject(feature) || !isObject(feature.geometry)) continue;
+    const geometry = feature.geometry;
+    const properties = scalarProperties(feature.properties);
+    if (geometry.type !== "Point" && geometry.type !== "MultiPoint") continue;
+
+    const positions = geometry.type === "Point"
+      ? [geometry.coordinates]
+      : Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
+
+    for (const [partIndex, position] of positions.entries()) {
+      const coords = coordinatePair(position);
+      if (!coords) throw new Error(`Invalid point coordinates in feature ${index}.`);
+      const featureId = jsonId(properties?.id ?? feature.id, `point-${index}`);
+      const id = geometry.type === "Point" ? featureId : `${featureId}-${partIndex + 1}`;
+      addNode(id, coords, properties);
+    }
+  }
+
+  for (const [index, feature] of features.entries()) {
+    if (!isObject(feature) || !isObject(feature.geometry)) continue;
+    const geometry = feature.geometry;
+    if (geometry.type !== "LineString" && geometry.type !== "MultiLineString") continue;
+
+    const properties = scalarProperties(feature.properties);
+    const parts = geometry.type === "LineString"
+      ? [geometry.coordinates]
+      : Array.isArray(geometry.coordinates) ? geometry.coordinates : [];
+
+    for (const [partIndex, part] of parts.entries()) {
+      if (!Array.isArray(part) || part.length < 2) {
+        throw new Error(`Line feature ${index} must contain at least two coordinates.`);
+      }
+      const lineCoordinates: [number, number][] = [];
+      for (const position of part) {
+        const point = coordinatePair(position);
+        if (!point) throw new Error(`Invalid line coordinates in feature ${index}.`);
+        lineCoordinates.push(point);
+      }
+      const first = lineCoordinates[0];
+      const last = lineCoordinates[lineCoordinates.length - 1];
+      const sourceId = typeof properties?.source === "string" || typeof properties?.source === "number"
+        ? String(properties.source)
+        : undefined;
+      const targetId = typeof properties?.target === "string" || typeof properties?.target === "number"
+        ? String(properties.target)
+        : undefined;
+      const source = ensureEndpoint(sourceId, first);
+      const target = ensureEndpoint(targetId, last);
+      const rawWeight = properties?.weight;
+      const weight = rawWeight === undefined ? 1 : Number(rawWeight);
+      if (!Number.isFinite(weight)) throw new Error(`Invalid line weight in feature ${index}.`);
+
+      const featureId = jsonId(properties?.id ?? feature.id, `line-${index}`);
+      const baseId = parts.length > 1 ? `${featureId}-${partIndex + 1}` : featureId;
+      let id = baseId;
+      let suffix = 2;
+      while (edgeIds.has(id)) id = `${baseId}-${suffix++}`;
+      edgeIds.add(id);
+      edges.push({
+        id,
+        source,
+        target,
+        coordinates: lineCoordinates,
+        weight,
+        t: typeof properties?.t === "string" ? properties.t : undefined,
+        properties,
+      });
+    }
+  }
+
+  if (!nodes.length) {
+    throw new Error(
+      "The file contains no supported point or line features. Polygon geometries are not supported yet."
+    );
+  }
+  return buildDataset(file, nodes, edges, description);
 }
 
 function parseJsonDataset(file: File, value: unknown): DatasetResponse {
@@ -112,64 +276,18 @@ function parseJsonDataset(file: File, value: unknown): DatasetResponse {
     return buildDataset(file, nodes, edges, "Flow data loaded from a JSON dataset.");
   }
 
-  const featureCollection = isObject(value) && value.type === "FeatureCollection" && Array.isArray(value.features)
+  const featureCollection = isFeatureCollection(value)
     ? value
     : isObject(value) && isObject(value.nodes) && isObject(value.edges) &&
-        value.nodes.type === "FeatureCollection" && value.edges.type === "FeatureCollection" &&
-        Array.isArray(value.nodes.features) && Array.isArray(value.edges.features)
+        isFeatureCollection(value.nodes) && isFeatureCollection(value.edges)
       ? {
-          type: "FeatureCollection",
+          type: "FeatureCollection" as const,
           features: [...value.nodes.features, ...value.edges.features],
         }
       : null;
 
   if (featureCollection) {
-    const nodes: Node[] = [];
-    const nodeByCoordinate = new Map<string, string>();
-    const edges: Edge[] = [];
-    const features = featureCollection.features as unknown[];
-
-    for (const [index, feature] of features.entries()) {
-      if (!isObject(feature) || !isObject(feature.geometry)) continue;
-      const properties = scalarProperties(feature.properties);
-      const geometry = feature.geometry;
-      if (geometry.type !== "Point") continue;
-      const coords = coordinatePair(geometry.coordinates);
-      if (!coords) throw new Error(`Invalid GeoJSON point at feature ${index}.`);
-      const id = jsonId(properties?.id ?? feature.id, `point-${index}`);
-      nodes.push({ id, coords, name: typeof properties?.name === "string" ? properties.name : id, properties });
-      nodeByCoordinate.set(coords.join(","), id);
-    }
-
-    for (const [index, feature] of features.entries()) {
-      if (!isObject(feature) || !isObject(feature.geometry)) continue;
-      const geometry = feature.geometry;
-      if (geometry.type !== "LineString" || !Array.isArray(geometry.coordinates)) continue;
-      const endpoints = [geometry.coordinates[0], geometry.coordinates.at(-1)]
-        .map(coordinatePair);
-      if (!endpoints[0] || !endpoints[1]) throw new Error(`Invalid GeoJSON line at feature ${index}.`);
-      const properties = scalarProperties(feature.properties);
-      const source = typeof properties?.source === "string"
-        ? properties.source
-        : nodeByCoordinate.get(endpoints[0].join(","));
-      const target = typeof properties?.target === "string"
-        ? properties.target
-        : nodeByCoordinate.get(endpoints[1].join(","));
-      if (!source || !target) {
-        throw new Error(`GeoJSON line ${index} needs source/target properties or matching points.`);
-      }
-      const weight = typeof properties?.weight === "number" ? properties.weight : Number(properties?.weight ?? 1);
-      if (!Number.isFinite(weight)) throw new Error(`Invalid GeoJSON line weight at feature ${index}.`);
-      edges.push({
-        id: jsonId(properties?.id ?? feature.id, `edge-${index}`),
-        source,
-        target,
-        weight,
-        t: typeof properties?.t === "string" ? properties.t : undefined,
-        properties,
-      });
-    }
-    return buildDataset(file, nodes, edges, "Point and line data loaded from GeoJSON.");
+    return parseFeatureCollection(file, featureCollection, "Point and line data loaded from GeoJSON.");
   }
 
   throw new Error("JSON must be a GeoNavi dataset or a GeoJSON FeatureCollection.");
@@ -192,9 +310,46 @@ function coordinates(
 }
 
 export async function processUpload(file: File): Promise<DatasetResponse> {
+  const isKml = /\.kml$/i.test(file.name);
+  const isGpx = /\.gpx$/i.test(file.name);
+  const isShapefileArchive = /\.zip$/i.test(file.name);
+  const isGeoParquet = /\.(geo)?parquet$/i.test(file.name);
   const isJson = /\.(geojson|json)$/i.test(file.name);
-  if (!isJson && !/\.csv$/i.test(file.name)) {
-    throw new Error("Unsupported file type. Choose a CSV, JSON, or GeoJSON file.");
+  const isCsv = /\.csv$/i.test(file.name);
+  // Keep the parser in place while GeoParquet support is under development, but reject uploads for now.
+  if (isGeoParquet) {
+    throw new Error("GeoParquet uploads are temporarily disabled.");
+  }
+  if (!isKml && !isGpx && !isShapefileArchive && !isGeoParquet && !isJson && !isCsv) {
+    throw new Error(
+      "Unsupported file type. Choose CSV, JSON, GeoJSON, KML, GPX, or a ZIP shapefile."
+    );
+  }
+
+  if (isKml || isGpx) {
+    const xml = new DOMParser().parseFromString(await file.text(), "application/xml");
+    if (xml.querySelector("parsererror")) throw new Error(`Could not parse ${isKml ? "KML" : "GPX"} XML.`);
+    const collection = isKml ? kml(xml) : gpx(xml);
+    return parseFeatureCollection(
+      file,
+      collection,
+      `Point and line data loaded from ${isKml ? "KML" : "GPX"}.`
+    );
+  }
+
+  if (isShapefileArchive) {
+    const parsed = await shp(await file.arrayBuffer());
+    const collections = isFeatureCollection(parsed)
+      ? [parsed]
+      : Object.values(parsed).filter(isFeatureCollection);
+    if (!collections.length) {
+      throw new Error("The ZIP archive does not contain a readable shapefile.");
+    }
+    return parseFeatureCollection(
+      file,
+      { type: "FeatureCollection", features: collections.flatMap(({ features }) => features) },
+      "Point and line data loaded from a zipped shapefile."
+    );
   }
 
   const bundle = await duckdb.selectBundle(duckdb.getJsDelivrBundles());
@@ -211,8 +366,47 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
     const connection = await db.connect();
 
     try {
-      const filename = isJson ? "upload.json" : "upload.csv";
+      const filename = isJson ? "upload.json" : isGeoParquet ? "upload.parquet" : "upload.csv";
       await db.registerFileBuffer(filename, new Uint8Array(await file.arrayBuffer()));
+
+      if (isGeoParquet) {
+        const metadataResult = await connection.query(
+          `SELECT CAST(value AS VARCHAR) AS value
+           FROM parquet_kv_metadata('${filename}')
+           WHERE key = 'geo'`
+        );
+        const metadataRows = metadataResult.toArray();
+        if (metadataRows.length !== 1) {
+          throw new Error("The Parquet file is missing GeoParquet metadata.");
+        }
+        const metadataValue = metadataRows[0].toJSON() as { value?: unknown };
+        if (typeof metadataValue.value !== "string") {
+          throw new Error("Could not read the GeoParquet metadata.");
+        }
+        const geoMetadata: unknown = JSON.parse(metadataValue.value);
+        if (!isObject(geoMetadata) || typeof geoMetadata.primary_column !== "string" ||
+            !isObject(geoMetadata.columns)) {
+          throw new Error("The GeoParquet metadata does not define a primary geometry column.");
+        }
+        const geometryColumn = geoMetadata.primary_column;
+        const columnMetadata = geoMetadata.columns[geometryColumn];
+        if (!isObject(columnMetadata) || columnMetadata.encoding !== "WKB") {
+          throw new Error("Only GeoParquet files using WKB geometry encoding are supported.");
+        }
+        if (!isWgs84Crs(columnMetadata.crs)) {
+          throw new Error("GeoParquet uploads must use WGS 84 (EPSG:4326 / OGC:CRS84).");
+        }
+
+        const quotedGeometryColumn = `"${geometryColumn.replace(/"/g, '""')}"`;
+        const result = await connection.query(
+          `SELECT *, hex(${quotedGeometryColumn}) AS "__geonavi_wkb" FROM read_parquet('${filename}')`
+        );
+        const features = geoParquetFeatures(
+          result.toArray().map((row) => row.toJSON()),
+          geometryColumn
+        );
+        return parseFeatureCollection(file, features, "Point and line data loaded from GeoParquet.");
+      }
 
       if (isJson) {
         const maximumObjectSize = Math.max(16 * 1024 * 1024, file.size + 1);

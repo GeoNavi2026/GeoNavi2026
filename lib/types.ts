@@ -30,6 +30,8 @@ export interface Edge {
   source: string;
   /** Node.id */
   target: string;
+  /** Full geometry for imported line features; defaults to node coordinates. */
+  coordinates?: [number, number][];
   /** Flow volume, trip count, or other magnitude */
   weight: number;
   /** ISO 8601 timestamp or bucket label, for time-aware views */
