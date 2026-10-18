@@ -316,13 +316,9 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
   const isGeoParquet = /\.(geo)?parquet$/i.test(file.name);
   const isJson = /\.(geojson|json)$/i.test(file.name);
   const isCsv = /\.csv$/i.test(file.name);
-  // Keep the parser in place while GeoParquet support is under development, but reject uploads for now.
-  if (isGeoParquet) {
-    throw new Error("GeoParquet uploads are temporarily disabled.");
-  }
   if (!isKml && !isGpx && !isShapefileArchive && !isGeoParquet && !isJson && !isCsv) {
     throw new Error(
-      "Unsupported file type. Choose CSV, JSON, GeoJSON, KML, GPX, or a ZIP shapefile."
+      "Unsupported file type. Choose CSV, JSON, GeoJSON, GeoParquet, KML, GPX, or a ZIP shapefile."
     );
   }
 
@@ -371,7 +367,8 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
 
       if (isGeoParquet) {
         const metadataResult = await connection.query(
-          `SELECT CAST(value AS VARCHAR) AS value
+          // value is a BLOB; CAST to VARCHAR escapes quotes as \x22, so decode it as UTF-8 instead.
+          `SELECT decode(value) AS value
            FROM parquet_kv_metadata('${filename}')
            WHERE key = 'geo'`
         );
@@ -397,6 +394,8 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
           throw new Error("GeoParquet uploads must use WGS 84 (EPSG:4326 / OGC:CRS84).");
         }
 
+        // Read geometry as raw WKB bytes rather than DuckDB's GEOMETRY type, which hex() rejects.
+        await connection.query("SET enable_geoparquet_conversion = false");
         const quotedGeometryColumn = `"${geometryColumn.replace(/"/g, '""')}"`;
         const result = await connection.query(
           `SELECT *, hex(${quotedGeometryColumn}) AS "__geonavi_wkb" FROM read_parquet('${filename}')`

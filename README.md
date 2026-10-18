@@ -19,7 +19,8 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 ## Uploading data
 
 The Explorer processes uploads locally in your browser. It accepts GeoNavi
-JSON, GeoJSON, flow CSV, KML, GPX, and ZIP archives containing shapefiles.
+JSON, GeoJSON, GeoParquet (WKB geometry, WGS 84), flow CSV, KML, GPX, and ZIP
+archives containing shapefiles.
 Shapefile uploads must be zipped with the required companion files (at least
 `.shp` and `.dbf`; include `.shx` and `.prj` when available). Point and line
 features are supported; polygon-only files are not yet displayed. Line
