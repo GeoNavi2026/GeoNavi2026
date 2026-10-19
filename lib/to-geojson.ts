@@ -21,7 +21,8 @@ export interface EdgeProps {
 
 export function toGeoJson(dataset: DatasetResponse) {
   const byId = new Map(dataset.nodes.map((n) => [n.id, n]));
-  const maxWeight = Math.max(1, ...dataset.edges.map((e) => e.weight));
+  let maxWeight = 1;
+  for (const e of dataset.edges) if (e.weight > maxWeight) maxWeight = e.weight;
 
   const nodes: FeatureCollection<Point, NodeProps> = {
     type: "FeatureCollection",
