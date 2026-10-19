@@ -14,7 +14,10 @@ import Logo from "./Logo";
 
 const MAX_BYTES = 50 * 1024 * 1024;
 const SAMPLE_DATASET_ID = "gnv-commute";
-const ACCEPT = ".csv,.json,.geojson,text/csv,application/json,application/geo+json";
+const ACCEPT = [
+  ".csv,.json,.geojson,.parquet,.geoparquet,.kml,.gpx,.zip",
+  "text/csv,application/json,application/geo+json,application/vnd.google-earth.kml+xml,application/gpx+xml,application/zip",
+].join(",");
 
 function errorMessage(err: unknown) {
   return err instanceof Error ? err.message : String(err);
@@ -110,7 +113,9 @@ export default function UploadScreen() {
           <Button onClick={() => inputRef.current?.click()} disabled={busy !== null}>
             Browse files
           </Button>
-          <p className="text-[13px] leading-[18px] text-ink-muted">CSV or GeoJSON · up to 50 MB</p>
+          <p className="text-center text-[13px] leading-[18px] text-ink-muted">
+            CSV, GeoJSON, GeoParquet, KML, GPX or zipped shapefile · up to 50 MB
+          </p>
           {error && (
             <p role="alert" className="text-center text-[13px] leading-[18px] text-[#f87171]">
               {error}

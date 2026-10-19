@@ -16,6 +16,18 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Uploading data
+
+The Explorer processes uploads locally in your browser. It accepts GeoNavi
+JSON, GeoJSON, GeoParquet (WKB geometry, WGS 84), flow CSV, KML, GPX, and ZIP
+archives containing shapefiles.
+Shapefile uploads must be zipped with the required companion files (at least
+`.shp` and `.dbf`; include `.shx` and `.prj` when available). Point and line
+features are supported; polygon-only files are not yet displayed. Line
+geometries retain their full paths. Data is converted to GeoNavi's point/edge
+model, so polygon fills, styling, and other GIS-specific symbology are not
+preserved.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

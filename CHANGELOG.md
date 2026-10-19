@@ -10,8 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Upload screen at `/` matching the Figma design: dark title card over a globe
-  graphic, a drag-and-drop upload box (CSV, JSON or GeoJSON, up to 50 MB) and a
-  "Try the sample dataset" link.
+  graphic, a drag-and-drop upload box (CSV, JSON, GeoJSON, GeoParquet, KML, GPX
+  or zipped shapefile, up to 50 MB) and a "Try the sample dataset" link.
+- Dataset catalog explorer at `/catalog`: the earlier explorer with the dataset
+  dropdown, for browsing datasets served by `/api/datasets`.
 - Map screen at `/explore` matching the Figma design: sidebar with the uploaded
   file's name, row count and column titles (with detected types), node name
   labels, dark popups, zoom buttons, and a time slider that filters edges by
