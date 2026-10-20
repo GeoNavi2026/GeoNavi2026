@@ -85,7 +85,7 @@ export default function Explorer() {
               setUploadError(null);
               try {
                 const { processUpload } = await import("@/lib/process-upload");
-                setUploadedDataset(await processUpload(file));
+                setUploadedDataset((await processUpload(file)).dataset);
               } catch (uploadFailure) {
                 setUploadError(errorMessage(uploadFailure));
               } finally {
@@ -150,7 +150,7 @@ export default function Explorer() {
       </aside>
 
       <main className="relative min-h-0 flex-1">
-        <MapView dataset={activeDataset} />
+        <MapView dataset={activeDataset} hour={null} />
       </main>
     </div>
   );

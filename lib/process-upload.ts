@@ -5,6 +5,16 @@ import shp from "shpjs";
 import type { FeatureCollection, Geometry } from "geojson";
 import { parseWkbHex } from "./wkb";
 import type { DatasetResponse, Edge, Node } from "./types";
+import { columnKind, describeRecords, summarizeDataset, TIME_COLUMN, type TableSummary } from "./upload-summary";
+
+export interface UploadResult {
+  dataset: DatasetResponse;
+  /** The uploaded table as the user sees it: row count and column headers. */
+  table: TableSummary;
+}
+
+// DuckDB column types that hold numbers.
+const NUMERIC_TYPE = /^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|UHUGEINT|FLOAT|DOUBLE|REAL|DECIMAL)/i;
 
 type CsvRow = {
   origin: string | null;
@@ -293,6 +303,26 @@ function parseJsonDataset(file: File, value: unknown): DatasetResponse {
   throw new Error("JSON must be a GeoNavi dataset or a GeoJSON FeatureCollection.");
 }
 
+/** Table summary for a GeoJSON upload: one row per feature, columns from feature properties. */
+function describeJson(value: unknown): TableSummary | null {
+  const features = isObject(value) && value.type === "FeatureCollection" && Array.isArray(value.features)
+    ? value.features
+    : isObject(value) && isObject(value.nodes) && isObject(value.edges) &&
+        Array.isArray(value.nodes.features) && Array.isArray(value.edges.features)
+      ? [...value.nodes.features, ...value.edges.features]
+      : null;
+  if (!features) return null;
+  const records = features.map((feature) =>
+    isObject(feature) && isObject(feature.properties) ? feature.properties : {}
+  );
+  return { rowCount: features.length, columns: describeRecords(records) };
+}
+
+/** Upload result for formats parsed as features (KML, GPX, shapefile, GeoParquet). */
+function featureUpload(dataset: DatasetResponse, collection: unknown): UploadResult {
+  return { dataset, table: describeJson(collection) ?? summarizeDataset(dataset) };
+}
+
 function coordinates(
   longitude: number | null,
   latitude: number | null,
@@ -309,7 +339,7 @@ function coordinates(
   return [longitude, latitude];
 }
 
-export async function processUpload(file: File): Promise<DatasetResponse> {
+export async function processUpload(file: File): Promise<UploadResult> {
   const isKml = /\.kml$/i.test(file.name);
   const isGpx = /\.gpx$/i.test(file.name);
   const isShapefileArchive = /\.zip$/i.test(file.name);
@@ -326,10 +356,9 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
     const xml = new DOMParser().parseFromString(await file.text(), "application/xml");
     if (xml.querySelector("parsererror")) throw new Error(`Could not parse ${isKml ? "KML" : "GPX"} XML.`);
     const collection = isKml ? kml(xml) : gpx(xml);
-    return parseFeatureCollection(
-      file,
-      collection,
-      `Point and line data loaded from ${isKml ? "KML" : "GPX"}.`
+    return featureUpload(
+      parseFeatureCollection(file, collection, `Point and line data loaded from ${isKml ? "KML" : "GPX"}.`),
+      collection
     );
   }
 
@@ -341,10 +370,13 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
     if (!collections.length) {
       throw new Error("The ZIP archive does not contain a readable shapefile.");
     }
-    return parseFeatureCollection(
-      file,
-      { type: "FeatureCollection", features: collections.flatMap(({ features }) => features) },
-      "Point and line data loaded from a zipped shapefile."
+    const collection: GeoFeatureCollection = {
+      type: "FeatureCollection",
+      features: collections.flatMap(({ features }) => features),
+    };
+    return featureUpload(
+      parseFeatureCollection(file, collection, "Point and line data loaded from a zipped shapefile."),
+      collection
     );
   }
 
@@ -404,7 +436,10 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
           result.toArray().map((row) => row.toJSON()),
           geometryColumn
         );
-        return parseFeatureCollection(file, features, "Point and line data loaded from GeoParquet.");
+        return featureUpload(
+          parseFeatureCollection(file, features, "Point and line data loaded from GeoParquet."),
+          features
+        );
       }
 
       if (isJson) {
@@ -426,7 +461,8 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
         if (objects.length !== 1) {
           throw new Error("JSON uploads must contain one dataset or GeoJSON object.");
         }
-        return parseJsonDataset(file, objects[0]);
+        const dataset = parseJsonDataset(file, objects[0]);
+        return { dataset, table: describeJson(objects[0]) ?? summarizeDataset(dataset) };
       }
 
       const columns = await connection.query(
@@ -440,6 +476,17 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
       if (missingColumns.length) {
         throw new Error(`CSV is missing required flow columns: ${missingColumns.join(", ")}.`);
       }
+
+      const typed = await connection.query(
+        `DESCRIBE SELECT * FROM read_csv_auto('${filename}')`
+      );
+      const csvColumns = typed.toArray().map((row) => {
+        const { column_name, column_type } = row.toJSON() as { column_name: unknown; column_type: unknown };
+        const name = String(column_name);
+        return { name, kind: columnKind(name, NUMERIC_TYPE.test(String(column_type))) };
+      });
+      // A column like "time" or "timestamp" becomes each edge's `t`.
+      const timeColumn = csvColumns.find(({ name }) => TIME_COLUMN.test(name))?.name;
 
       const result = await connection.query(`
         SELECT
@@ -495,6 +542,7 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
           source: origin,
           target: destination,
           weight,
+          t: timeColumn ? String(row[timeColumn] ?? "").trim() || undefined : undefined,
           properties: scalarProperties(
             Object.fromEntries(
               Object.entries(row).filter(([key]) =>
@@ -515,7 +563,10 @@ export async function processUpload(file: File): Promise<DatasetResponse> {
         name: id,
       }));
 
-      return buildDataset(file, nodes, edges, "Flow data loaded from a CSV upload.");
+      return {
+        dataset: buildDataset(file, nodes, edges, "Flow data loaded from a CSV upload."),
+        table: { rowCount: rows.length, columns: csvColumns },
+      };
     } finally {
       await connection.close();
     }
