@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The map screen's "New upload" button opens the file picker and replaces the
+  data in place, like "Browse files" on the upload screen, and files can be
+  dropped anywhere on the map screen. Styles, the selected hour and the
+  legend reset for the new data.
 - Column-driven point styling on the map screen: a style menu next to each
   column assigns it to Color (Sunset ramp for numbers, rainbow for text),
   Size (numbers only) or Shape (columns with up to 6 distinct values), with

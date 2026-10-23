@@ -3,11 +3,12 @@
 
 // Figma pages "2 · Map" and "3 · Customization": sidebar with the uploaded
 // file and its columns (each with a style control), the map, the legend and
-// the time slider.
+// the time slider. "New upload" and dropping a file anywhere replace the data
+// in place.
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   assignChannel,
   channelForColumn,
@@ -18,9 +19,11 @@ import {
 } from "@/lib/point-style";
 import { hourlyTotals } from "@/lib/time";
 import { useUpload } from "@/lib/upload-store";
+import { UPLOAD_FORMATS_HINT, useFileUpload } from "@/lib/use-file-upload";
 import Button from "./Button";
 import ColumnItem from "./ColumnItem";
 import ColumnStyleControl from "./ColumnStyleControl";
+import DashedOutline from "./DashedOutline";
 import Logo from "./Logo";
 import MapLegend from "./MapLegend";
 import TimeSlider from "./TimeSlider";
@@ -32,6 +35,7 @@ const MapView = dynamic(() => import("./MapView"), {
 });
 
 const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
 
 export default function MapScreen() {
   const router = useRouter();
@@ -49,6 +53,20 @@ export default function MapScreen() {
   const hour = chosenHour ?? peakHour;
   const [playing, setPlaying] = useState(false);
   const [pointStyle, setPointStyle] = useState<PointStyleState>(DEFAULT_POINT_STYLE);
+  const { busy, error, uploadFile, openPicker, inputProps } = useFileUpload(setUpload);
+  // Counts nested dragenter/dragleave pairs so the overlay doesn't flicker over child elements.
+  const dragDepth = useRef(0);
+  const [dragging, setDragging] = useState(false);
+
+  // New data: start from a clean slate (no styles, busiest hour, paused).
+  const datasetId = upload?.dataset.meta.id;
+  const [stateFor, setStateFor] = useState(datasetId);
+  if (stateFor !== datasetId) {
+    setStateFor(datasetId);
+    setPointStyle(DEFAULT_POINT_STYLE);
+    setChosenHour(null);
+    setPlaying(false);
+  }
 
   const profiles = useMemo(
     () => new Map((upload?.columns ?? []).map((c) => [c.name, profileColumn(upload!.dataset, c.name)])),
@@ -68,20 +86,45 @@ export default function MapScreen() {
   if (!upload) return null;
 
   return (
-    <div className="flex h-dvh w-full flex-col bg-canvas md:flex-row">
+    <div
+      className="relative flex h-dvh w-full flex-col bg-canvas md:flex-row"
+      onDragEnter={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current += 1;
+        if (!busy) setDragging(true);
+      }}
+      onDragOver={(e) => {
+        if (hasFiles(e)) e.preventDefault();
+      }}
+      onDragLeave={(e) => {
+        if (!hasFiles(e)) return;
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        dragDepth.current = 0;
+        setDragging(false);
+        const file = e.dataTransfer.files[0];
+        if (file) uploadFile(file);
+      }}
+    >
       <aside className="flex max-h-[45dvh] w-full shrink-0 flex-col gap-[20px] overflow-y-auto border-line bg-surface p-[20px] max-md:border-b md:h-full md:max-h-none md:w-[340px] md:border-r">
         <div className="flex w-full items-center justify-between">
           <Logo size="sm" />
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setUpload(null);
-              router.push("/");
-            }}
-          >
+          <Button variant="secondary" onClick={openPicker} disabled={busy !== null}>
             New upload
           </Button>
+          <input {...inputProps} />
         </div>
+
+        {error && (
+          <p role="alert" className="-mt-[8px] text-[13px] leading-[18px] text-[#f87171]">
+            {error}
+          </p>
+        )}
 
         <div className="flex w-full items-center gap-[12px] rounded-[12px] border border-line bg-canvas p-[12px]">
           <span className="flex size-[40px] shrink-0 items-center justify-center rounded-[10px] bg-accent-soft">
@@ -137,7 +180,7 @@ export default function MapScreen() {
           }`}
         >
           <div className="pointer-events-auto max-h-full">
-            <MapLegend sections={pointStyles?.legend ?? []} />
+            <MapLegend key={datasetId} sections={pointStyles?.legend ?? []} />
           </div>
         </div>
         {/* Only datasets with a time column get the time slider. */}
@@ -158,6 +201,24 @@ export default function MapScreen() {
           </div>
         )}
       </main>
+
+      {(dragging || busy) && (
+        <div
+          role="status"
+          className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-canvas/70 p-4 backdrop-blur-[2px]"
+        >
+          <div className="relative flex w-[420px] max-w-full flex-col items-center gap-[12px] rounded-[14px] bg-canvas px-[32px] py-[40px]">
+            <DashedOutline radius={14} active />
+            <span className="flex size-[60px] items-center justify-center rounded-full bg-accent-soft">
+              <img src="/figma/icon-cloud-upload.svg" width={28} height={28} alt="" />
+            </span>
+            <p className="text-center text-[16px] leading-[24px] font-medium text-ink">
+              {busy ?? "Drop to replace the current data"}
+            </p>
+            {!busy && <p className="text-center text-[13px] leading-[18px] text-ink-muted">{UPLOAD_FORMATS_HINT}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
