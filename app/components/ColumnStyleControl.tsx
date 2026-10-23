@@ -14,7 +14,7 @@ import {
 import Button from "./Button";
 import StyleIcon, { type StyleIconKind } from "./StyleIcon";
 
-const LABELS: Record<StyleChannel, string> = { color: "Color", size: "Size", shape: "Shape" };
+const LABELS: Record<StyleChannel, string> = { color: "Color", size: "Size", shape: "Shape", time: "Time" };
 
 type ColumnStyleControlProps = {
   column: string;
@@ -77,8 +77,9 @@ export default function ColumnStyleControl({
     if (open?.kind === "menu") panelRef.current?.querySelector<HTMLButtonElement>("[role=menuitemradio]:not([aria-disabled=true])")?.focus();
   }, [open]);
 
-  // lat/lon columns place the points; flow-only columns have no values on points.
-  if (positional || !profile.onPoints) {
+  const available = channelAvailability(profile);
+  // lat/lon columns place the points; flow-only columns can only drive Time.
+  if (positional || (!profile.onPoints && !available.time.enabled)) {
     return (
       <span
         className="shrink-0 px-[8px] text-[11px] leading-[16px] text-ink-muted"
@@ -89,7 +90,6 @@ export default function ColumnStyleControl({
     );
   }
 
-  const available = channelAvailability(profile);
   const toggle = () => {
     if (open) return setOpen(null);
     const rect = triggerRef.current?.getBoundingClientRect();

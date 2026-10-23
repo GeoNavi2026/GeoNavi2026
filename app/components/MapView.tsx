@@ -20,6 +20,7 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 import { DEFAULT_POINT_COLOR, RADIUS, type PointStyles } from "@/lib/point-style";
 import { ICON_UNIT_RADIUS_CSS, SHAPES, shapeImageName, shapeSdf } from "@/lib/shapes";
+import type { TimeTarget } from "@/lib/time-axis";
 import { toGeoJson } from "@/lib/to-geojson";
 import type { DatasetResponse } from "@/lib/types";
 
@@ -70,8 +71,11 @@ function escapeHtml(s: string) {
 
 type MapViewProps = {
   dataset: DatasetResponse | null;
-  /** Show only edges from this hour of day; null shows every edge and means no time slider. */
-  hour: number | null;
+  /**
+   * The Time style: show only the points or flows at `step` of the time
+   * slider (`stepOf` maps their ids to steps). Null shows everything.
+   */
+  timeFilter?: TimeFilter | null;
   /** Column-driven point colours, sizes and shapes; null or empty keeps the default look. */
   pointStyles?: PointStyles | null;
 };
@@ -81,12 +85,16 @@ const NODE_RADIUS: ExpressionSpecification = ["coalesce", ["get", "radius"], RAD
 // Distance from a point's centre to its name pill.
 const labelOffset = (radius: number): [number, number] => [radius + 6, 0];
 
-export default function MapView({ dataset, hour, pointStyles = null }: MapViewProps) {
+export type TimeFilter = { target: TimeTarget; stepOf: Map<string, number>; step: number };
+
+export default function MapView({ dataset, pointStyles = null, timeFilter = null }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const labelsRef = useRef<Map<string, Marker>>(new Map());
   const [ready, setReady] = useState(false);
-  const hasTimeSlider = hour !== null;
+  const hasTimeSlider = timeFilter !== null;
+  const pointSteps = timeFilter?.target === "points" ? timeFilter.stepOf : null;
+  const flowSteps = timeFilter?.target === "flows" ? timeFilter.stepOf : null;
 
   // Create the map once.
   useEffect(() => {
@@ -199,9 +207,6 @@ export default function MapView({ dataset, hour, pointStyles = null }: MapViewPr
     const map = mapRef.current;
     if (!map || !ready) return;
 
-    const { edges } = dataset ? toGeoJson(dataset) : { edges: EMPTY };
-    map.getSource<GeoJSONSource>("edges")?.setData(edges);
-
     for (const marker of labelsRef.current.values()) marker.remove();
     labelsRef.current = new Map();
     if (dataset && dataset.nodes.length <= MAX_LABELS) {
@@ -230,9 +235,22 @@ export default function MapView({ dataset, hour, pointStyles = null }: MapViewPr
         }
       );
     }
-    // Refit only when the data changes, not on every hour step.
+    // Refit only when the data changes, not when the time slider appears.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataset, ready]);
+
+  // Flows, tagged with their time step when the Time style is on a flow column.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const edges = dataset ? toGeoJson(dataset).edges : EMPTY;
+    if (flowSteps) {
+      for (const feature of edges.features) {
+        Object.assign(feature.properties!, { step: flowSteps.get(String(feature.properties?.id)) ?? -1 });
+      }
+    }
+    map.getSource<GeoJSONSource>("edges")?.setData(edges);
+  }, [dataset, flowSteps, ready]);
 
   // Points, with their column-driven styles.
   useEffect(() => {
@@ -243,6 +261,7 @@ export default function MapView({ dataset, hour, pointStyles = null }: MapViewPr
       const id = String(feature.properties?.id);
       const style = pointStyles?.byNode.get(id);
       labelsRef.current.get(id)?.setOffset(labelOffset(style?.radius ?? RADIUS.default));
+      if (pointSteps) Object.assign(feature.properties!, { step: pointSteps.get(id) ?? -1 });
       if (!style) continue;
       Object.assign(feature.properties!, {
         color: style.color,
@@ -255,16 +274,21 @@ export default function MapView({ dataset, hour, pointStyles = null }: MapViewPr
     const styled = pointStyles?.active ?? false;
     map.setPaintProperty("nodes", "icon-halo-color", styled ? "rgba(24, 24, 27, 0.85)" : "#ffffff");
     map.setPaintProperty("nodes", "icon-halo-width", styled ? 1.5 : 2.5);
-  }, [dataset, pointStyles, ready]);
+  }, [dataset, pointStyles, pointSteps, ready]);
 
-  // Time filter.
+  // Time filter: only the points or flows at the slider's current step.
+  const step = timeFilter?.step ?? null;
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const filter: FilterSpecification | null = hour === null ? null : ["==", ["get", "hour"], hour];
-    map.setFilter("edges", filter);
-    map.setFilter("edges-hit", filter);
-  }, [hour, ready]);
+    const atStep: FilterSpecification | null = step === null ? null : ["==", ["get", "step"], step];
+    map.setFilter("edges", flowSteps ? atStep : null);
+    map.setFilter("edges-hit", flowSteps ? atStep : null);
+    map.setFilter("nodes", pointSteps ? atStep : null);
+    for (const [id, marker] of labelsRef.current) {
+      marker.getElement().style.display = !pointSteps || pointSteps.get(id) === step ? "" : "none";
+    }
+  }, [step, flowSteps, pointSteps, ready]);
 
   return (
     <div className="relative h-full w-full">

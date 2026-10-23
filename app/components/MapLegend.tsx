@@ -26,7 +26,7 @@ export default function MapLegend({ sections }: { sections: LegendSection[] }) {
   return (
     <section
       aria-label="Legend"
-      className="flex max-h-full w-[212px] flex-col gap-[14px] overflow-y-auto rounded-[12px] border border-line bg-surface/94 px-[14px] py-[12px] shadow-[0px_4px_16px_0px_rgba(0,0,0,0.3)]"
+      className="flex max-h-full w-[212px] flex-col gap-[14px] overflow-y-auto rounded-[12px] scheme-dark border border-line bg-surface/94 px-[14px] py-[12px] shadow-[0px_4px_16px_0px_rgba(0,0,0,0.3)]"
     >
       {sections.map((section) => {
         const key = `${section.channel}:${section.column}`;

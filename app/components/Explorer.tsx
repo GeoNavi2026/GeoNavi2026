@@ -150,7 +150,7 @@ export default function Explorer() {
       </aside>
 
       <main className="relative min-h-0 flex-1">
-        <MapView dataset={activeDataset} hour={null} />
+        <MapView dataset={activeDataset} />
       </main>
     </div>
   );

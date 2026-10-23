@@ -7,8 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The time slider supports click-and-drag again: dragging the thumb used to
+  start a native image drag (which could also trigger a bogus "Unsupported file
+  type" upload). Dragging anywhere on the bars or track now scrubs.
+- Number labels keep full values below 10,000, so years read "2019" instead of
+  "2K".
+- Coordinate columns like `xlong`/`ylat` are recognised, and names such as
+  `flat` or `nylon` are no longer mistaken for coordinates.
+- The legend's scrollbar uses the dark theme.
+
 ### Added
 
+- "Time" style option: assigning a column to Time brings up the time slider,
+  which steps through that column's values and shows only the points or flows
+  at the current step. Time columns step through the 24 hours, number columns
+  through each value (or 24 even ranges), text columns through each distinct
+  value (up to 100). Works on flow columns too; the slider no longer appears
+  automatically. Adds `data/test/flows_hourly.csv` for trying it.
 - The map screen's "New upload" button opens the file picker and replaces the
   data in place, like "Browse files" on the upload screen, and files can be
   dropped anywhere on the map screen. Styles, the selected hour and the

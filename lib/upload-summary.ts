@@ -21,17 +21,20 @@ export interface UploadedData extends TableSummary {
   dataset: DatasetResponse;
 }
 
-// Matches "lat", "O_lat", "dest-latitude" and camelCase "originLatitude".
-const LAT = /(^|[_\s.-])(lat|latitude)$|[a-z](Lat|Latitude)$/i;
-const LON = /(^|[_\s.-])(lon|lng|long|longitude)$|[a-z](Lon|Lng|Longitude)$/i;
+// Coordinate column names: separated ("lat", "O_lat", "dest-latitude"),
+// camelCase ("originLat"; case-sensitive so "flat" or "nylon" don't match),
+// or x/y-prefixed ("ylat", "xlong").
+const LAT = [/(^|[_\s.-])(lat|latitude)$/i, /[a-z](Lat|Latitude)$/, /^y_?(lat|latitude)$/i];
+const LON = [/(^|[_\s.-])(lon|lng|long|longitude)$/i, /[a-z](Lon|Lng|Long|Longitude)$/, /^x_?(lon|lng|long|longitude)$/i];
+const matches = (patterns: RegExp[], name: string) => patterns.some((p) => p.test(name));
 
 /** Column names that hold each row's time; they drive the map's time slider. */
 export const TIME_COLUMN = /^(t|time|hour|timestamp|datetime|date_?time)$/i;
 
 export function columnKind(name: string, numeric: boolean): ColumnKind {
   if (TIME_COLUMN.test(name)) return "time";
-  if (LAT.test(name)) return "lat";
-  if (LON.test(name)) return "lon";
+  if (matches(LAT, name)) return "lat";
+  if (matches(LON, name)) return "lon";
   return numeric ? "number" : "text";
 }
 

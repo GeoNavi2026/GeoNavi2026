@@ -1,7 +1,6 @@
 // Converts a DatasetResponse into GeoJSON the map can render.
 
 import type { FeatureCollection, LineString, Point } from "geojson";
-import { edgeHour } from "./time";
 import type { DatasetResponse } from "./types";
 
 export interface NodeProps {
@@ -18,8 +17,6 @@ export interface EdgeProps {
   weight: number;
   /** weight / max weight in the dataset, 0..1, for styling */
   norm: number;
-  /** Hour of day (0–23) from the edge's `t`, or -1 when it has none */
-  hour: number;
 }
 
 export function toGeoJson(dataset: DatasetResponse) {
@@ -57,7 +54,6 @@ export function toGeoJson(dataset: DatasetResponse) {
         targetName: target.name ?? target.id,
         weight: e.weight,
         norm: e.weight / maxWeight,
-        hour: edgeHour(e.t) ?? -1,
       },
     });
   }

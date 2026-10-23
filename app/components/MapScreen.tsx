@@ -17,7 +17,7 @@ import {
   profileColumn,
   type PointStyleState,
 } from "@/lib/point-style";
-import { hourlyTotals } from "@/lib/time";
+import { buildTimeAxis } from "@/lib/time-axis";
 import { useUpload } from "@/lib/upload-store";
 import { UPLOAD_FORMATS_HINT, useFileUpload } from "@/lib/use-file-upload";
 import Button from "./Button";
@@ -46,11 +46,7 @@ export default function MapScreen() {
     if (!upload) router.replace("/");
   }, [upload, router]);
 
-  const totals = useMemo(() => (upload ? hourlyTotals(upload.dataset) : null), [upload]);
-  // Start on the busiest hour.
-  const peakHour = totals ? totals.indexOf(Math.max(...totals)) : 0;
-  const [chosenHour, setChosenHour] = useState<number | null>(null);
-  const hour = chosenHour ?? peakHour;
+  const [chosenStep, setChosenStep] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const [pointStyle, setPointStyle] = useState<PointStyleState>(DEFAULT_POINT_STYLE);
   const { busy, error, uploadFile, openPicker, inputProps } = useFileUpload(setUpload);
@@ -58,20 +54,39 @@ export default function MapScreen() {
   const dragDepth = useRef(0);
   const [dragging, setDragging] = useState(false);
 
-  // New data: start from a clean slate (no styles, busiest hour, paused).
+  // New data: start from a clean slate (no styles, paused).
   const datasetId = upload?.dataset.meta.id;
   const [stateFor, setStateFor] = useState(datasetId);
   if (stateFor !== datasetId) {
     setStateFor(datasetId);
     setPointStyle(DEFAULT_POINT_STYLE);
-    setChosenHour(null);
+    setChosenStep(null);
+    setPlaying(false);
+  }
+  // A different Time column: start on its busiest step, paused.
+  const [stepFor, setStepFor] = useState(pointStyle.time);
+  if (stepFor !== pointStyle.time) {
+    setStepFor(pointStyle.time);
+    setChosenStep(null);
     setPlaying(false);
   }
 
   const profiles = useMemo(
-    () => new Map((upload?.columns ?? []).map((c) => [c.name, profileColumn(upload!.dataset, c.name)])),
+    () =>
+      new Map(
+        (upload?.columns ?? []).map((c) => [c.name, profileColumn(upload!.dataset, c.name, c.kind === "time")])
+      ),
     [upload]
   );
+  const timeAxis = useMemo(() => {
+    const profile = pointStyle.time ? profiles.get(pointStyle.time) : undefined;
+    if (!upload || !pointStyle.time || !profile?.timeTarget) return null;
+    return buildTimeAxis(upload.dataset, pointStyle.time, profile.timeTarget, profile.isTimeColumn);
+  }, [upload, pointStyle.time, profiles]);
+  let peakStep = 0;
+  if (timeAxis) for (let i = 1; i < timeAxis.totals.length; i++) if (timeAxis.totals[i] > timeAxis.totals[peakStep]) peakStep = i;
+  const step = chosenStep ?? peakStep;
+  const stepCount = timeAxis?.labels.length ?? 1;
   const pointStyles = useMemo(
     () => (upload ? computePointStyles(upload.dataset, pointStyle, profiles) : null),
     [upload, pointStyle, profiles]
@@ -79,9 +94,9 @@ export default function MapScreen() {
 
   useEffect(() => {
     if (!playing) return;
-    const id = setInterval(() => setChosenHour((h) => ((h ?? peakHour) + 1) % 24), 1000);
+    const id = setInterval(() => setChosenStep((s) => ((s ?? peakStep) + 1) % stepCount), 1000);
     return () => clearInterval(id);
-  }, [playing, peakHour]);
+  }, [playing, peakStep, stepCount]);
 
   if (!upload) return null;
 
@@ -172,27 +187,34 @@ export default function MapScreen() {
       </aside>
 
       <main className="relative min-h-0 flex-1">
-        <MapView dataset={upload.dataset} hour={totals ? hour : null} pointStyles={pointStyles} />
+        <MapView
+          dataset={upload.dataset}
+          pointStyles={pointStyles}
+          timeFilter={timeAxis ? { target: timeAxis.target, stepOf: timeAxis.stepOf, step } : null}
+        />
         {/* Legend sits above the time slider when there is one. */}
         <div
           className={`pointer-events-none absolute left-[16px] flex items-end ${
-            totals ? "top-[16px] bottom-[154px]" : "top-[16px] bottom-[42px]"
+            timeAxis ? "top-[16px] bottom-[154px]" : "top-[16px] bottom-[42px]"
           }`}
         >
           <div className="pointer-events-auto max-h-full">
             <MapLegend key={datasetId} sections={pointStyles?.legend ?? []} />
           </div>
         </div>
-        {/* Only datasets with a time column get the time slider. */}
-        {totals && (
+        {/* The time slider appears when a column is assigned the Time style. */}
+        {timeAxis && (
           <div className="pointer-events-none absolute inset-x-[16px] bottom-[42px]">
             <div className="pointer-events-auto">
               <TimeSlider
-                totals={totals}
-                hour={hour}
-                onHourChange={(h) => {
+                column={timeAxis.column}
+                labels={timeAxis.labels}
+                ticks={timeAxis.ticks}
+                totals={timeAxis.totals}
+                step={step}
+                onStepChange={(s) => {
                   setPlaying(false);
-                  setChosenHour(h);
+                  setChosenStep(s);
                 }}
                 playing={playing}
                 onTogglePlay={() => setPlaying((p) => !p)}

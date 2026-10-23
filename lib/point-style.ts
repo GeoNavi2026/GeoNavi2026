@@ -7,19 +7,26 @@
 // - Size: number columns only.
 // - Shape: any column with at most MAX_SHAPE_VALUES distinct values; numbers
 //   are treated as categories.
+// - Time: steps the time slider through the column's values (see time-axis.ts);
+//   works on points or flows.
 // - A column drives at most one channel, and each channel one column.
 
+import { formatValue } from "./format";
 import { SHAPES, type ShapeName } from "./shapes";
+import { flowStats, timeAvailability, type TimeTarget, type ValueStats } from "./time-axis";
 import type { DatasetResponse } from "./types";
 
-export type StyleChannel = "color" | "size" | "shape";
-export const STYLE_CHANNELS: StyleChannel[] = ["color", "size", "shape"];
+export { formatValue };
+
+export type StyleChannel = "color" | "size" | "shape" | "time";
+export const STYLE_CHANNELS: StyleChannel[] = ["color", "size", "shape", "time"];
 export type ColorScale = "linear" | "quantile" | "log";
 
 export interface PointStyleState {
   color: string | null;
   size: string | null;
   shape: string | null;
+  time: string | null;
   colorScale: ColorScale;
   colorReverse: boolean;
 }
@@ -28,6 +35,7 @@ export const DEFAULT_POINT_STYLE: PointStyleState = {
   color: null,
   size: null,
   shape: null,
+  time: null,
   colorScale: "linear",
   colorReverse: false,
 };
@@ -57,9 +65,15 @@ export interface ColumnProfile {
   onPoints: boolean;
   numeric: boolean;
   uniqueCount: number;
+  /** The column's values on flows, for the Time style. */
+  flows: ValueStats;
+  /** Named like a time column ("time", "timestamp", …): Time steps through hours. */
+  isTimeColumn: boolean;
+  /** Where the Time style filters: points when they carry the column, else flows. */
+  timeTarget: TimeTarget | null;
 }
 
-export function profileColumn(dataset: DatasetResponse, column: string): ColumnProfile {
+export function profileColumn(dataset: DatasetResponse, column: string, isTimeColumn = false): ColumnProfile {
   let onPoints = false;
   let numeric = true;
   const unique = new Set<string>();
@@ -71,7 +85,15 @@ export function profileColumn(dataset: DatasetResponse, column: string): ColumnP
     unique.add(String(value));
     if (asNumber(value) === null) numeric = false;
   }
-  return { onPoints, numeric: onPoints && unique.size > 0 && numeric, uniqueCount: unique.size };
+  const flows = flowStats(dataset, column);
+  return {
+    onPoints,
+    numeric: onPoints && unique.size > 0 && numeric,
+    uniqueCount: unique.size,
+    flows,
+    isTimeColumn,
+    timeTarget: onPoints ? "points" : flows.present ? "flows" : null,
+  };
 }
 
 export interface ChannelAvailability {
@@ -82,7 +104,18 @@ export interface ChannelAvailability {
 export function channelAvailability(profile: ColumnProfile): Record<StyleChannel, ChannelAvailability> {
   const n = profile.uniqueCount;
   const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  const time = timeAvailability(
+    profile.timeTarget === "points"
+      ? { present: true, numeric: profile.numeric, unique: n }
+      : profile.timeTarget === "flows" ? profile.flows : null,
+    profile.isTimeColumn
+  );
+  if (!profile.onPoints) {
+    const pointsOnly = { enabled: false, hint: "Points only" };
+    return { color: pointsOnly, size: pointsOnly, shape: pointsOnly, time };
+  }
   return {
+    time,
     color: n === 0
       ? { enabled: false, hint: "No values on points" }
       : { enabled: true, hint: profile.numeric ? "Sunset ramp, low to high" : "Rainbow, one colour per value" },
@@ -147,9 +180,6 @@ export function sunsetColor(t: number) {
 export function rainbowColor(index: number, count: number) {
   return `hsl(${Math.round((index / Math.max(1, count)) * 360)}, 72%, 55%)`;
 }
-
-export const formatValue = (n: number) =>
-  new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
 
 function numericValues(dataset: DatasetResponse, column: string) {
   const values: number[] = [];
