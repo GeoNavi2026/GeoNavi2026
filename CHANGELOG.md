@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Column-driven point styling on the map screen: a style menu next to each
+  column assigns it to Color (Sunset ramp for numbers, rainbow for text),
+  Size (numbers only) or Shape (columns with up to 6 distinct values), with
+  linear/quantile/log and reverse options for number colours, and a legend
+  with collapsible sections. Columns that only exist on flows show "Flows";
+  lat/lon columns show "Position".
 - Upload screen at `/` matching the Figma design: dark title card over a globe
   graphic, a drag-and-drop upload box (CSV, JSON, GeoJSON, GeoParquet, KML, GPX
   or zipped shapefile, up to 50 MB) and a "Try the sample dataset" link.

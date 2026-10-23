@@ -1,17 +1,28 @@
 "use client";
 /* eslint-disable @next/next/no-img-element -- static SVG icon exported from Figma */
 
-// Figma page "2 · Map": sidebar with the uploaded file and its columns,
-// the map, and the time slider.
+// Figma pages "2 · Map" and "3 · Customization": sidebar with the uploaded
+// file and its columns (each with a style control), the map, the legend and
+// the time slider.
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import {
+  assignChannel,
+  channelForColumn,
+  computePointStyles,
+  DEFAULT_POINT_STYLE,
+  profileColumn,
+  type PointStyleState,
+} from "@/lib/point-style";
 import { hourlyTotals } from "@/lib/time";
 import { useUpload } from "@/lib/upload-store";
 import Button from "./Button";
 import ColumnItem from "./ColumnItem";
+import ColumnStyleControl from "./ColumnStyleControl";
 import Logo from "./Logo";
+import MapLegend from "./MapLegend";
 import TimeSlider from "./TimeSlider";
 
 // MapLibre needs `window`, so never render the map on the server.
@@ -37,6 +48,16 @@ export default function MapScreen() {
   const [chosenHour, setChosenHour] = useState<number | null>(null);
   const hour = chosenHour ?? peakHour;
   const [playing, setPlaying] = useState(false);
+  const [pointStyle, setPointStyle] = useState<PointStyleState>(DEFAULT_POINT_STYLE);
+
+  const profiles = useMemo(
+    () => new Map((upload?.columns ?? []).map((c) => [c.name, profileColumn(upload!.dataset, c.name)])),
+    [upload]
+  );
+  const pointStyles = useMemo(
+    () => (upload ? computePointStyles(upload.dataset, pointStyle, profiles) : null),
+    [upload, pointStyle, profiles]
+  );
 
   useEffect(() => {
     if (!playing) return;
@@ -86,18 +107,39 @@ export default function MapScreen() {
                 {upload.columns.length}
               </span>
             </div>
-            <p className="text-[12px] leading-[16px] text-ink-muted">Column titles from your uploaded file</p>
+            <p className="text-[12px] leading-[16px] text-ink-muted">Pick a style next to a column to drive the points</p>
           </div>
           <ul className="flex w-full flex-col gap-[2px]">
             {upload.columns.map((column) => (
-              <ColumnItem key={column.name} column={column} />
+              <ColumnItem key={column.name} column={column}>
+                <ColumnStyleControl
+                  column={column.name}
+                  positional={column.kind === "lat" || column.kind === "lon"}
+                  profile={profiles.get(column.name)!}
+                  channel={channelForColumn(pointStyle, column.name)}
+                  onChannelChange={(channel) => setPointStyle((s) => assignChannel(s, column.name, channel))}
+                  colorScale={pointStyle.colorScale}
+                  colorReverse={pointStyle.colorReverse}
+                  onColorOptionsChange={(options) => setPointStyle((s) => ({ ...s, ...options }))}
+                />
+              </ColumnItem>
             ))}
           </ul>
         </section>
       </aside>
 
       <main className="relative min-h-0 flex-1">
-        <MapView dataset={upload.dataset} hour={totals ? hour : null} />
+        <MapView dataset={upload.dataset} hour={totals ? hour : null} pointStyles={pointStyles} />
+        {/* Legend sits above the time slider when there is one. */}
+        <div
+          className={`pointer-events-none absolute left-[16px] flex items-end ${
+            totals ? "top-[16px] bottom-[154px]" : "top-[16px] bottom-[42px]"
+          }`}
+        >
+          <div className="pointer-events-auto max-h-full">
+            <MapLegend sections={pointStyles?.legend ?? []} />
+          </div>
+        </div>
         {/* Only datasets with a time column get the time slider. */}
         {totals && (
           <div className="pointer-events-none absolute inset-x-[16px] bottom-[42px]">
