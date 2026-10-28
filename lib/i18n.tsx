@@ -29,6 +29,7 @@ const PT_MESSAGES: [RegExp, (...groups: string[]) => string][] = [
   [/^No values on points$/, () => "Sem valores nos pontos"],
   [/^Sunset ramp, low to high$/, () => "Degradê laranja, do menor para o maior"],
   [/^Rainbow, one colou?r per value$/, () => "Arco-íris, uma cor por valor"],
+  [/^Colorblind-safe, one colou?r per value$/, () => "Seguro para daltônicos, uma cor por valor"],
   [/^Bigger points for bigger values$/, () => "Pontos maiores para valores maiores"],
   [/^Number columns only$/, () => "Somente colunas numéricas"],
   [/^Too many unique values \((.+)\)$/, (n) => `Valores únicos demais (${n})`],

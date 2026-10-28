@@ -2,8 +2,8 @@
 // the resulting colour, size and shape of every point plus the legend.
 //
 // Rules (Figma page "3 · Customization"):
-// - Color: number columns use the Sunset ramp; any other column gets a
-//   rainbow with one colour per distinct value (no limit).
+// - Color: number columns use the Sunset ramp; any other column gets one
+//   colour per distinct value (Okabe-Ito up to 8, then rainbow).
 // - Size: number columns only.
 // - Shape: any column with at most MAX_SHAPE_VALUES distinct values; numbers
 //   are treated as categories.
@@ -101,6 +101,13 @@ export interface ChannelAvailability {
   hint: string;
 }
 
+function colorHint(numeric: boolean, unique: number) {
+  if (numeric) return "Sunset ramp, low to high";
+  return unique <= CATEGORY_COLORS.length
+    ? "Colorblind-safe, one colour per value"
+    : "Rainbow, one colour per value";
+}
+
 export function channelAvailability(profile: ColumnProfile): Record<StyleChannel, ChannelAvailability> {
   const n = profile.uniqueCount;
   const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
@@ -118,7 +125,7 @@ export function channelAvailability(profile: ColumnProfile): Record<StyleChannel
     time,
     color: n === 0
       ? { enabled: false, hint: "No values on points" }
-      : { enabled: true, hint: profile.numeric ? "Sunset ramp, low to high" : "Rainbow, one colour per value" },
+      : { enabled: true, hint: colorHint(profile.numeric, n) },
     size: profile.numeric
       ? { enabled: true, hint: "Bigger points for bigger values" }
       : { enabled: false, hint: "Number columns only" },
@@ -177,8 +184,18 @@ export function sunsetColor(t: number) {
   return `#${mix.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
+// colorblind-safe
+export const CATEGORY_COLORS = [
+  "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+  "#0072B2", "#D55E00", "#CC79A7", "#000000",
+];
+
 export function rainbowColor(index: number, count: number) {
-  return `hsl(${Math.round((index / Math.max(1, count)) * 360)}, 72%, 55%)`;
+  const fitsPalette = count <= CATEGORY_COLORS.length;
+  if (fitsPalette) return CATEGORY_COLORS[index];
+
+  const hue = Math.round((index / Math.max(1, count)) * 360);
+  return `hsl(${hue}, 72%, 55%)`;
 }
 
 function numericValues(dataset: DatasetResponse, column: string) {
