@@ -110,6 +110,12 @@ const en = {
   "map.weight": "Weight",
   "map.contributors": "contributors",
 
+  "map.summary": "Map showing {points} and {flows}.",
+  "map.points.one": "{n} point",
+  "map.points.other": "{n} points",
+  "map.flows.one": "{n} flow",
+  "map.flows.other": "{n} flows",
+
   "column.kind.text": "text",
   "column.kind.number": "number",
   "column.kind.lat": "lat",
@@ -176,6 +182,11 @@ const ptBR: Record<MessageKey, string> = {
   "map.zoomOut": "Afastar",
   "map.weight": "Peso",
   "map.contributors": "colaboradores",
+  "map.summary": "Mapa com {points} e {flows}.", // leitor de tela
+  "map.points.one": "{n} ponto",
+  "map.points.other": "{n} pontos",
+  "map.flows.one": "{n} fluxo",
+  "map.flows.other": "{n} fluxos",
 
   "column.kind.text": "texto",
   "column.kind.number": "número",
@@ -221,7 +232,10 @@ type I18n = {
   lang: Lang;
   setLang: (lang: Lang) => void;
   t: (key: MessageKey, vars?: Vars) => string;
-  plural: (count: number, key: "map.rows" | "map.columns") => string;
+  plural: (
+    count: number,
+    key: "map.rows" | "map.columns" | "map.points" | "map.flows"
+  ) => string;
   formatNumber: (n: number) => string;
   translateMessage: (message: string) => string;
   translateTimeLabel: (label: string) => string;

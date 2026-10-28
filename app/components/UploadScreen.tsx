@@ -62,7 +62,7 @@ export default function UploadScreen() {
           <span className="flex size-[60px] items-center justify-center rounded-full bg-accent-soft">
             <img src="/figma/icon-cloud-upload.svg" width={28} height={28} alt="" />
           </span>
-          <p className="text-center text-[16px] leading-[24px] font-medium text-ink">
+          <p aria-live="polite" className="text-center text-[16px] leading-[24px] font-medium text-ink">
             {busy ?? t("upload.drop")}
           </p>
           <p className="text-[13px] leading-[18px] text-ink-muted">{t("upload.or")}</p>

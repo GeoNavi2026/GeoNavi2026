@@ -130,7 +130,7 @@ export default function MapScreen() {
     >
       <aside className="flex max-h-[45dvh] w-full shrink-0 flex-col gap-[20px] overflow-y-auto border-line bg-surface p-[20px] max-md:border-b md:h-full md:max-h-none md:w-[340px] md:border-r">
         <div className="flex w-full items-center justify-between">
-          <Logo size="sm" />
+          <Logo size="sm" as="h1" />
           <Button variant="secondary" onClick={openPicker} disabled={busy !== null}>
             {t("map.newUpload")}
           </Button>
@@ -189,6 +189,12 @@ export default function MapScreen() {
       </aside>
 
       <main className="relative min-h-0 flex-1">
+
+        {/* screen readers */}
+        <p className="sr-only" aria-live="polite">
+          {t("map.summary", { points: plural(upload.dataset.nodes.length, "map.points"), flows: plural(upload.dataset.edges.length, "map.flows") })}
+        </p>
+
         <MapView
           dataset={upload.dataset}
           pointStyles={pointStyles}

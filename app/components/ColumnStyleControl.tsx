@@ -4,7 +4,7 @@
 // Figma "Style select" next to each column, its "Style menu", and the
 // "Color settings" popover (page "3 · Customization").
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import {
   channelAvailability,
   type ColorScale,
@@ -92,6 +92,26 @@ export default function ColumnStyleControl({
     );
   }
 
+  function moveFocus(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = [
+      ...e.currentTarget.querySelectorAll<HTMLButtonElement>("[role^=menuitem]:not([aria-disabled=true])"),
+    ];
+    const count = items.length;
+    if (!count) return;
+
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const targets: Record<string, number> = {
+      ArrowDown: (at + 1) % count,
+      ArrowUp: (at - 1 + count) % count,
+      Home: 0,
+      End: count - 1,
+    };
+    if (!(e.key in targets)) return;
+
+    e.preventDefault();
+    items[targets[e.key]].focus(); // skips disabled
+  }
+
   const toggle = () => {
     if (open) return setOpen(null);
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -123,6 +143,7 @@ export default function ColumnStyleControl({
           ref={panelRef}
           role="menu"
           aria-label={t("style.menuLabel", { column })}
+          onKeyDown={moveFocus}
           className="fixed z-50 flex w-[236px] flex-col gap-[2px] rounded-[10px] border border-line-strong/60 bg-chip p-[6px] shadow-[0px_8px_24px_0px_rgba(0,0,0,0.45)]"
           style={{ top: open.rect.bottom + 6, left: open.rect.right - 236 }}
         >
