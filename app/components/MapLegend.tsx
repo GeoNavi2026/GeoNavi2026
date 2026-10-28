@@ -5,7 +5,7 @@
 // active style channel.
 
 import { useState } from "react";
-import { formatValue, SUNSET, type LegendSection } from "@/lib/point-style";
+import { SUNSET, type LegendSection } from "@/lib/point-style";
 import { useI18n } from "@/lib/i18n";
 import { shapePoints } from "@/lib/shapes";
 import StyleIcon from "./StyleIcon";
@@ -68,6 +68,7 @@ export default function MapLegend({ sections }: { sections: LegendSection[] }) {
 }
 
 function LegendBody({ section }: { section: LegendSection }) {
+  const { formatValue } = useI18n();
   if (section.channel === "color" && section.kind === "ramp") {
     const stops = section.reverse ? [...SUNSET].reverse() : SUNSET;
     return (
@@ -96,12 +97,12 @@ function LegendBody({ section }: { section: LegendSection }) {
     return (
       <div className="flex items-end gap-[14px]">
         {section.items.map((item) => (
-          <div key={item.label} className="flex flex-col items-center gap-[4px]">
+          <div key={item.value} className="flex flex-col items-center gap-[4px]">
             <span
               className="rounded-full border-[1.5px] border-ink"
               style={{ width: item.radius * 2, height: item.radius * 2 }}
             />
-            <span className="text-[11px] leading-[14px] text-ink-muted">{item.label}</span>
+            <span className="text-[11px] leading-[14px] text-ink-muted">{formatValue(item.value)}</span>
           </div>
         ))}
       </div>

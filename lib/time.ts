@@ -11,8 +11,3 @@ export function edgeHour(t: string | undefined): number | null {
   const hour = Number(match[1]);
   return hour >= 0 && hour <= 23 ? hour : null;
 }
-
-export function formatHour(hour: number) {
-  const h12 = hour % 12 || 12;
-  return `${h12}:00 ${hour < 12 ? "AM" : "PM"}`;
-}

@@ -3,8 +3,17 @@
 // UI language (en / pt-BR)
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  formatAxisLabel,
+  formatNumber,
+  formatValue,
+  pluralCategory,
+  type AxisLabel,
+  type Hint,
+  type Lang,
+} from "./format";
 
-export type Lang = "en" | "pt-BR";
+export type { Lang };
 
 export const LANGS: { code: Lang; short: string; name: string }[] = [
   { code: "en", short: "EN", name: "English" },
@@ -20,30 +29,8 @@ function fill(text: string, vars?: Vars) {
   return text.replace(/\{(\w+)\}/g, (match, name) => (name in vars ? String(vars[name]) : match));
 }
 
-const one = (n: string, singular: string, many: string) => (n === "1" ? singular : many);
-
-// lib/ messages, matched on the English text
+// Upload errors arrive from the processing pipeline as English text; match them here.
 const PT_MESSAGES: [RegExp, (...groups: string[]) => string][] = [
-  // style hints
-  [/^Points only$/, () => "Somente pontos"],
-  [/^No values on points$/, () => "Sem valores nos pontos"],
-  [/^Sunset ramp, low to high$/, () => "Degradê laranja, do menor para o maior"],
-  [/^Rainbow, one colou?r per value$/, () => "Arco-íris, uma cor por valor"],
-  [/^Colorblind-safe, one colou?r per value$/, () => "Seguro para daltônicos, uma cor por valor"],
-  [/^Bigger points for bigger values$/, () => "Pontos maiores para valores maiores"],
-  [/^Number columns only$/, () => "Somente colunas numéricas"],
-  [/^Too many unique values \((.+)\)$/, (n) => `Valores únicos demais (${n})`],
-  [
-    /^([\d,.]+) unique values? → ([\d,.]+) shapes?$/,
-    (n, s) => `${n} ${one(n, "valor único", "valores únicos")} → ${s} ${one(s, "forma", "formas")}`,
-  ],
-  [/^No values$/, () => "Sem valores"],
-  [/^Needs at least 2 values$/, () => "Precisa de pelo menos 2 valores"],
-  [/^Step through the 24 hours$/, () => "Percorre as 24 horas"],
-  [/^(\d+) steps across the range$/, (n) => `${n} etapas ao longo do intervalo`],
-  [/^(\d+) steps, one per value$/, (n) => `${n} etapas, uma por valor`],
-
-  // upload errors
   [
     /^Unsupported file type\./,
     () => "Tipo de arquivo não suportado. Escolha CSV, JSON, GeoJSON, GeoParquet, KML, GPX ou um shapefile em .zip.",
@@ -71,16 +58,6 @@ export function translateMessage(message: string, lang: Lang): string {
     if (match) return render(...match.slice(1));
   }
   return message; // no translation yet
-}
-
-// "6:00 PM" -> "18:00", "6 PM" -> "18h"
-export function translateTimeLabel(label: string, lang: Lang): string {
-  if (lang === "en") return label;
-  const match = /^(\d{1,2})(:00)? (AM|PM)$/.exec(label);
-  if (!match) return label;
-
-  const hour = (Number(match[1]) % 12) + (match[3] === "PM" ? 12 : 0);
-  return match[2] ? `${String(hour).padStart(2, "0")}:00` : `${hour}h`;
 }
 
 const en = {
@@ -152,6 +129,23 @@ const en = {
   "slider.pause": "Pause",
   "slider.heading": "TIME",
   "slider.label": "Time: {column}",
+
+  // Style menu hints; `{n}` is formatted for the language. `.one`/`.other` pick the plural form.
+  "hint.pointsOnly": "Points only",
+  "hint.noValuesOnPoints": "No values on points",
+  "hint.sunset": "Sunset ramp, low to high",
+  "hint.rainbow": "Rainbow, one colour per value",
+  "hint.colorblind": "Colorblind-safe, one colour per value",
+  "hint.bigger": "Bigger points for bigger values",
+  "hint.numbersOnly": "Number columns only",
+  "hint.noValues": "No values",
+  "hint.needsTwo": "Needs at least 2 values",
+  "hint.hours": "Step through the 24 hours",
+  "hint.tooMany": "Too many unique values ({n})",
+  "hint.shapes.one": "{n} unique value → {n} shape",
+  "hint.shapes.other": "{n} unique values → {n} shapes",
+  "hint.rangeSteps": "{n} steps across the range",
+  "hint.valueSteps": "{n} steps, one per value",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -224,6 +218,22 @@ const ptBR: Record<MessageKey, string> = {
   "slider.pause": "Pausar",
   "slider.heading": "TEMPO",
   "slider.label": "Tempo: {column}",
+
+  "hint.pointsOnly": "Somente pontos",
+  "hint.noValuesOnPoints": "Sem valores nos pontos",
+  "hint.sunset": "Degradê laranja, do menor para o maior",
+  "hint.rainbow": "Arco-íris, uma cor por valor",
+  "hint.colorblind": "Seguro para daltônicos, uma cor por valor",
+  "hint.bigger": "Pontos maiores para valores maiores",
+  "hint.numbersOnly": "Somente colunas numéricas",
+  "hint.noValues": "Sem valores",
+  "hint.needsTwo": "Precisa de pelo menos 2 valores",
+  "hint.hours": "Percorre as 24 horas",
+  "hint.tooMany": "Valores únicos demais ({n})",
+  "hint.shapes.one": "{n} valor único → {n} forma",
+  "hint.shapes.other": "{n} valores únicos → {n} formas",
+  "hint.rangeSteps": "{n} etapas ao longo do intervalo",
+  "hint.valueSteps": "{n} etapas, uma por valor",
 };
 
 const DICTIONARIES: Record<Lang, Record<MessageKey, string>> = { en, "pt-BR": ptBR };
@@ -236,9 +246,15 @@ type I18n = {
     count: number,
     key: "map.rows" | "map.columns" | "map.points" | "map.flows"
   ) => string;
+  /** Full number with grouping, e.g. a flow's weight. */
   formatNumber: (n: number) => string;
+  /** Compact number for legends, e.g. "18K" / "18 mil". */
+  formatValue: (n: number) => string;
+  /** A Time slider step or tick. */
+  formatAxisLabel: (label: AxisLabel) => string;
+  /** A style menu hint from lib/ code. */
+  hint: (hint: Hint) => string;
   translateMessage: (message: string) => string;
-  translateTimeLabel: (label: string) => string;
 };
 
 const I18nContext = createContext<I18n | null>(null);
@@ -282,16 +298,23 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<I18n>(() => {
     const dict = DICTIONARIES[lang];
-    const formatNumber = (n: number) => n.toLocaleString(lang === "pt-BR" ? "pt-BR" : "en-US");
+    const number = (n: number) => formatNumber(n, lang);
 
     return {
       lang,
       setLang,
-      formatNumber,
+      formatNumber: number,
+      formatValue: (n) => formatValue(n, lang),
+      formatAxisLabel: (label) => formatAxisLabel(label, lang),
       t: (key, vars) => fill(dict[key], vars),
-      plural: (count, key) => fill(dict[`${key}.${count === 1 ? "one" : "other"}`], { n: formatNumber(count) }),
+      plural: (count, key) => fill(dict[`${key}.${pluralCategory(count, lang)}`], { n: number(count) }),
+      hint: (hint) => {
+        if (!("n" in hint)) return dict[`hint.${hint.key}`];
+        const plural = `hint.${hint.key}.${pluralCategory(hint.n, lang)}`;
+        const key = (plural in dict ? plural : `hint.${hint.key}`) as MessageKey;
+        return fill(dict[key], { n: number(hint.n) });
+      },
       translateMessage: (message) => translateMessage(message, lang),
-      translateTimeLabel: (label) => translateTimeLabel(label, lang),
     };
   }, [lang, setLang]);
 

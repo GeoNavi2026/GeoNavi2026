@@ -5,6 +5,7 @@
 // "Time" style: hours of the day, number ranges or distinct values.
 
 import type { PointerEvent } from "react";
+import type { AxisLabel } from "@/lib/format";
 import { useI18n } from "@/lib/i18n";
 
 const BAR_HEIGHT = 30;
@@ -12,10 +13,10 @@ const BAR_HEIGHT = 30;
 type TimeSliderProps = {
   /** Column driving the slider, for the accessible name. */
   column: string;
-  /** Readout label for each step. */
-  labels: string[];
-  /** A few labels spread under the track. */
-  ticks: string[];
+  /** Readout label for each step, formatted here for the UI language. */
+  labels: AxisLabel[];
+  /** Labels under the track: one per step, or a few spread out. */
+  ticks: AxisLabel[];
   /** Bar height per step (point count or flow weight). */
   totals: number[];
   step: number;
@@ -34,8 +35,9 @@ export default function TimeSlider({
   playing,
   onTogglePlay,
 }: TimeSliderProps) {
-  const { t, translateTimeLabel } = useI18n();
+  const { t, formatAxisLabel } = useI18n();
   const count = labels.length;
+  const current = formatAxisLabel(labels[step]);
   let max = 1;
   for (const t of totals) if (t > max) max = t;
   const progress = (step + 0.5) / count;
@@ -67,8 +69,8 @@ export default function TimeSlider({
 
       <div className="flex max-w-[180px] min-w-[76px] shrink-0 flex-col whitespace-nowrap">
         <span className="text-[10px] leading-[14px] font-medium text-ink-muted">{t("slider.heading")}</span>
-        <span className="truncate text-[18px] leading-[24px] font-semibold text-ink tabular-nums" title={translateTimeLabel(labels[step])}>
-          {translateTimeLabel(labels[step])}
+        <span className="truncate text-[18px] leading-[24px] font-semibold text-ink tabular-nums" title={current}>
+          {current}
         </span>
       </div>
 
@@ -120,7 +122,7 @@ export default function TimeSlider({
               value={step}
               onChange={(e) => onStepChange(Number(e.currentTarget.value))}
               aria-label={t("slider.label", { column })}
-              aria-valuetext={translateTimeLabel(labels[step])}
+              aria-valuetext={current}
               // Keyboard access only; pointer input is handled by the drag surface.
               className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
             />
@@ -134,8 +136,8 @@ export default function TimeSlider({
             style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}
           >
             {ticks.map((tick, i) => (
-              <span key={i} className={`truncate px-[2px] ${i === step ? "text-ink" : ""}`} title={translateTimeLabel(tick)}>
-                {translateTimeLabel(tick)}
+              <span key={i} className={`truncate px-[2px] ${i === step ? "text-ink" : ""}`} title={formatAxisLabel(tick)}>
+                {formatAxisLabel(tick)}
               </span>
             ))}
           </div>
@@ -143,7 +145,7 @@ export default function TimeSlider({
           <div className="flex w-full justify-between gap-[8px] text-[11px] leading-[14px] whitespace-nowrap text-ink-muted">
             {ticks.map((tick, i) => (
               <span key={i} className="min-w-0 truncate">
-                {translateTimeLabel(tick)}
+                {formatAxisLabel(tick)}
               </span>
             ))}
           </div>

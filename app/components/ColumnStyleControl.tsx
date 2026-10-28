@@ -47,7 +47,7 @@ export default function ColumnStyleControl({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<Open>(null);
-  const { t, translateMessage } = useI18n();
+  const { t, hint } = useI18n();
 
   // Close on outside click, Escape, or scroll/resize (the panel is fixed-positioned).
   useEffect(() => {
@@ -166,7 +166,7 @@ export default function ColumnStyleControl({
               key={c}
               icon={iconFor(c, profile.numeric)}
               label={t(LABELS[c])}
-              hint={translateMessage(available[c].hint)}
+              hint={hint(available[c].hint)}
               selected={channel === c}
               disabled={!available[c].enabled}
               onSelect={() => {
