@@ -2,8 +2,8 @@
 // the resulting colour, size and shape of every point plus the legend.
 //
 // Rules (Figma page "3 · Customization"):
-// - Color: number columns use the Sunset ramp; any other column gets a
-//   rainbow with one colour per distinct value (no limit).
+// - Color: number columns use the Sunset ramp; any other column gets one
+//   colour per distinct value (Okabe-Ito up to 7, then rainbow).
 // - Size: number columns only.
 // - Shape: any column with at most MAX_SHAPE_VALUES distinct values; numbers
 //   are treated as categories.
@@ -11,12 +11,11 @@
 //   works on points or flows.
 // - A column drives at most one channel, and each channel one column.
 
-import { formatValue } from "./format";
+import type { Hint } from "./format";
 import { SHAPES, type ShapeName } from "./shapes";
 import { flowStats, timeAvailability, type TimeTarget, type ValueStats } from "./time-axis";
 import type { DatasetResponse } from "./types";
 
-export { formatValue };
 
 export type StyleChannel = "color" | "size" | "shape" | "time";
 export const STYLE_CHANNELS: StyleChannel[] = ["color", "size", "shape", "time"];
@@ -98,12 +97,17 @@ export function profileColumn(dataset: DatasetResponse, column: string, isTimeCo
 
 export interface ChannelAvailability {
   enabled: boolean;
-  hint: string;
+  /** Formatted for the UI language by i18n's `hint()`. */
+  hint: Hint;
+}
+
+function colorHint(numeric: boolean, unique: number): Hint {
+  if (numeric) return { key: "sunset" };
+  return { key: unique <= CATEGORY_COLORS.length ? "colorblind" : "rainbow" };
 }
 
 export function channelAvailability(profile: ColumnProfile): Record<StyleChannel, ChannelAvailability> {
   const n = profile.uniqueCount;
-  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
   const time = timeAvailability(
     profile.timeTarget === "points"
       ? { present: true, numeric: profile.numeric, unique: n }
@@ -111,22 +115,22 @@ export function channelAvailability(profile: ColumnProfile): Record<StyleChannel
     profile.isTimeColumn
   );
   if (!profile.onPoints) {
-    const pointsOnly = { enabled: false, hint: "Points only" };
+    const pointsOnly: ChannelAvailability = { enabled: false, hint: { key: "pointsOnly" } };
     return { color: pointsOnly, size: pointsOnly, shape: pointsOnly, time };
   }
   return {
     time,
     color: n === 0
-      ? { enabled: false, hint: "No values on points" }
-      : { enabled: true, hint: profile.numeric ? "Sunset ramp, low to high" : "Rainbow, one colour per value" },
+      ? { enabled: false, hint: { key: "noValuesOnPoints" } }
+      : { enabled: true, hint: colorHint(profile.numeric, n) },
     size: profile.numeric
-      ? { enabled: true, hint: "Bigger points for bigger values" }
-      : { enabled: false, hint: "Number columns only" },
+      ? { enabled: true, hint: { key: "bigger" } }
+      : { enabled: false, hint: { key: "numbersOnly" } },
     shape: n === 0
-      ? { enabled: false, hint: "No values on points" }
+      ? { enabled: false, hint: { key: "noValuesOnPoints" } }
       : n > MAX_SHAPE_VALUES
-        ? { enabled: false, hint: `Too many unique values (${n.toLocaleString()})` }
-        : { enabled: true, hint: `${plural(n, "unique value")} → ${plural(n, "shape")}` },
+        ? { enabled: false, hint: { key: "tooMany", n } }
+        : { enabled: true, hint: { key: "shapes", n } },
   };
 }
 
@@ -153,7 +157,7 @@ export interface PointStyle {
 export type LegendSection =
   | { channel: "color"; column: string; kind: "ramp"; min: number; max: number; reverse: boolean }
   | { channel: "color"; column: string; kind: "categories"; items: { label: string; color: string }[] }
-  | { channel: "size"; column: string; items: { label: string; radius: number }[] }
+  | { channel: "size"; column: string; items: { value: number; radius: number }[] }
   | { channel: "shape"; column: string; items: { label: string; shape: ShapeName }[] };
 
 export interface PointStyles {
@@ -177,8 +181,19 @@ export function sunsetColor(t: number) {
   return `#${mix.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
+// Okabe-Ito colorblind-safe palette, minus its black: black disappears on the
+// dark legend and merges with the dark outline styled points get.
+export const CATEGORY_COLORS = [
+  "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+  "#0072B2", "#D55E00", "#CC79A7",
+];
+
 export function rainbowColor(index: number, count: number) {
-  return `hsl(${Math.round((index / Math.max(1, count)) * 360)}, 72%, 55%)`;
+  const fitsPalette = count <= CATEGORY_COLORS.length;
+  if (fitsPalette) return CATEGORY_COLORS[index];
+
+  const hue = Math.round((index / Math.max(1, count)) * 360);
+  return `hsl(${hue}, 72%, 55%)`;
 }
 
 function numericValues(dataset: DatasetResponse, column: string) {
@@ -279,7 +294,7 @@ export function computePointStyles(
       styleOf(node.id).radius = n === null ? RADIUS.min : radiusOf(n);
     }
     const samples = min === max ? [min] : [min, (min + max) / 2, max];
-    legend.push({ channel: "size", column, items: samples.map((v) => ({ label: formatValue(v), radius: radiusOf(v) })) });
+    legend.push({ channel: "size", column, items: samples.map((v) => ({ value: v, radius: radiusOf(v) })) });
   }
 
   if (state.shape) {

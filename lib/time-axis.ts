@@ -6,13 +6,14 @@
 //   more than 24 distinct values.
 // - Text columns step through each distinct value (up to MAX_TIME_STEPS).
 
-import { formatValue } from "./format";
-import { edgeHour, formatHour } from "./time";
+import type { AxisLabel, Hint } from "./format";
+import { edgeHour } from "./time";
 import type { DatasetResponse, Edge } from "./types";
 
 export const MAX_TIME_STEPS = 100;
 export const NUMBER_BINS = 24;
-const HOUR_TICKS = ["12 AM", "6 AM", "12 PM", "6 PM", "11 PM"];
+// Hours labelled under the slider when it steps through the day.
+const HOUR_TICKS = [0, 6, 12, 18, 23];
 
 type Scalar = number | string | boolean | null | undefined;
 export type TimeTarget = "points" | "flows";
@@ -66,25 +67,26 @@ export function flowStats(dataset: DatasetResponse, column: string): ValueStats 
 
 export interface TimeAvailability {
   enabled: boolean;
-  hint: string;
+  /** Formatted for the UI language by i18n's `hint()`. */
+  hint: Hint;
 }
 
 export function timeAvailability(stats: ValueStats | null, isTimeColumn: boolean): TimeAvailability {
-  if (!stats?.present || stats.unique === 0) return { enabled: false, hint: "No values" };
-  if (stats.unique < 2) return { enabled: false, hint: "Needs at least 2 values" };
-  if (isTimeColumn) return { enabled: true, hint: "Step through the 24 hours" };
-  if (stats.numeric && stats.unique > NUMBER_BINS) return { enabled: true, hint: `${NUMBER_BINS} steps across the range` };
-  if (stats.unique > MAX_TIME_STEPS) return { enabled: false, hint: `Too many unique values (${stats.unique.toLocaleString()})` };
-  return { enabled: true, hint: `${stats.unique} steps, one per value` };
+  if (!stats?.present || stats.unique === 0) return { enabled: false, hint: { key: "noValues" } };
+  if (stats.unique < 2) return { enabled: false, hint: { key: "needsTwo" } };
+  if (isTimeColumn) return { enabled: true, hint: { key: "hours" } };
+  if (stats.numeric && stats.unique > NUMBER_BINS) return { enabled: true, hint: { key: "rangeSteps", n: NUMBER_BINS } };
+  if (stats.unique > MAX_TIME_STEPS) return { enabled: false, hint: { key: "tooMany", n: stats.unique } };
+  return { enabled: true, hint: { key: "valueSteps", n: stats.unique } };
 }
 
 export interface TimeAxis {
   column: string;
   target: TimeTarget;
-  /** Readout label for each step. */
-  labels: string[];
+  /** Readout label for each step, as raw values (formatted per language by the slider). */
+  labels: AxisLabel[];
   /** Labels under the track: one per step when they're the same length as `labels`, else spread out. */
-  ticks: string[];
+  ticks: AxisLabel[];
   /** Points: number of points per step. Flows: total weight per step. */
   totals: number[];
   /** Step of each point or flow id; items without a value are absent. */
@@ -94,7 +96,7 @@ export interface TimeAxis {
 // Short lists label every step (centred under its bar); long ones show a few.
 const PER_STEP_TICKS = 8;
 
-function spreadTicks(labels: string[]) {
+function spreadTicks(labels: AxisLabel[]) {
   if (labels.length <= PER_STEP_TICKS) return labels;
   return [labels[0], labels[Math.floor((labels.length - 1) / 2)], labels[labels.length - 1]];
 }
@@ -107,14 +109,14 @@ export function buildTimeAxis(
 ): TimeAxis {
   const rows = items(dataset, column, target).filter((r) => !isEmpty(r.value));
   const stepOf = new Map<string, number>();
-  let labels: string[];
-  let ticks: string[];
+  let labels: AxisLabel[];
+  let ticks: AxisLabel[];
   let stepFor: (value: Scalar) => number | null;
 
   const hours = isTimeColumn ? rows.map((r) => edgeHour(String(r.value))) : [];
   if (isTimeColumn && hours.some((h) => h !== null)) {
-    labels = Array.from({ length: 24 }, (_, h) => formatHour(h));
-    ticks = HOUR_TICKS;
+    labels = Array.from({ length: 24 }, (_, hour) => ({ kind: "hour", hour }));
+    ticks = HOUR_TICKS.map((hour) => ({ kind: "hourTick", hour }));
     stepFor = (v) => edgeHour(String(v));
   } else {
     const numbers = rows.map((r) => asNumber(r.value));
@@ -127,15 +129,15 @@ export function buildTimeAxis(
         if (n > max) max = n;
       }
       const width = (max - min) / NUMBER_BINS || 1;
-      labels = Array.from({ length: NUMBER_BINS }, (_, i) => `${formatValue(min + i * width)}–${formatValue(min + (i + 1) * width)}`);
-      ticks = [formatValue(min), formatValue((min + max) / 2), formatValue(max)];
+      labels = Array.from({ length: NUMBER_BINS }, (_, i) => ({ kind: "range", from: min + i * width, to: min + (i + 1) * width }));
+      ticks = [min, (min + max) / 2, max].map((value) => ({ kind: "value", value }));
       stepFor = (v) => Math.min(NUMBER_BINS - 1, Math.floor((asNumber(v)! - min) / width));
     } else {
       const sorted = numeric
         ? distinct.sort((a, b) => Number(a) - Number(b))
         : distinct.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       const index = new Map(sorted.map((v, i) => [v, i]));
-      labels = numeric ? sorted.map((v) => formatValue(Number(v))) : sorted;
+      labels = sorted.map((v): AxisLabel => (numeric ? { kind: "value", value: Number(v) } : { kind: "text", text: v }));
       ticks = spreadTicks(labels);
       stepFor = (v) => index.get(String(v)) ?? null;
     }
