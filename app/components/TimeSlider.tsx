@@ -5,6 +5,7 @@
 // "Time" style: hours of the day, number ranges or distinct values.
 
 import type { PointerEvent } from "react";
+import { useI18n } from "@/lib/i18n";
 
 const BAR_HEIGHT = 30;
 
@@ -33,6 +34,7 @@ export default function TimeSlider({
   playing,
   onTogglePlay,
 }: TimeSliderProps) {
+  const { t, translateTimeLabel } = useI18n();
   const count = labels.length;
   let max = 1;
   for (const t of totals) if (t > max) max = t;
@@ -50,7 +52,7 @@ export default function TimeSlider({
       <button
         type="button"
         onClick={onTogglePlay}
-        aria-label={playing ? "Pause" : "Play"}
+        aria-label={t(playing ? "slider.pause" : "slider.play")}
         className="flex size-[40px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-accent hover:bg-[#1d4ed8]"
       >
         {playing ? (
@@ -64,9 +66,9 @@ export default function TimeSlider({
       </button>
 
       <div className="flex max-w-[180px] min-w-[76px] shrink-0 flex-col whitespace-nowrap">
-        <span className="text-[10px] leading-[14px] font-medium text-ink-muted">TIME</span>
-        <span className="truncate text-[18px] leading-[24px] font-semibold text-ink tabular-nums" title={labels[step]}>
-          {labels[step]}
+        <span className="text-[10px] leading-[14px] font-medium text-ink-muted">{t("slider.heading")}</span>
+        <span className="truncate text-[18px] leading-[24px] font-semibold text-ink tabular-nums" title={translateTimeLabel(labels[step])}>
+          {translateTimeLabel(labels[step])}
         </span>
       </div>
 
@@ -117,8 +119,8 @@ export default function TimeSlider({
               step={1}
               value={step}
               onChange={(e) => onStepChange(Number(e.currentTarget.value))}
-              aria-label={`Time: ${column}`}
-              aria-valuetext={labels[step]}
+              aria-label={t("slider.label", { column })}
+              aria-valuetext={translateTimeLabel(labels[step])}
               // Keyboard access only; pointer input is handled by the drag surface.
               className="pointer-events-none absolute inset-0 h-full w-full opacity-0"
             />
@@ -131,17 +133,17 @@ export default function TimeSlider({
             className="grid w-full text-center text-[11px] leading-[14px] whitespace-nowrap text-ink-muted"
             style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}
           >
-            {ticks.map((t, i) => (
-              <span key={i} className={`truncate px-[2px] ${i === step ? "text-ink" : ""}`} title={t}>
-                {t}
+            {ticks.map((tick, i) => (
+              <span key={i} className={`truncate px-[2px] ${i === step ? "text-ink" : ""}`} title={translateTimeLabel(tick)}>
+                {translateTimeLabel(tick)}
               </span>
             ))}
           </div>
         ) : (
           <div className="flex w-full justify-between gap-[8px] text-[11px] leading-[14px] whitespace-nowrap text-ink-muted">
-            {ticks.map((t, i) => (
+            {ticks.map((tick, i) => (
               <span key={i} className="min-w-0 truncate">
-                {t}
+                {translateTimeLabel(tick)}
               </span>
             ))}
           </div>

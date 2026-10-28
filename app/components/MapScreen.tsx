@@ -19,11 +19,13 @@ import {
 } from "@/lib/point-style";
 import { buildTimeAxis } from "@/lib/time-axis";
 import { useUpload } from "@/lib/upload-store";
-import { UPLOAD_FORMATS_HINT, useFileUpload } from "@/lib/use-file-upload";
+import { useI18n } from "@/lib/i18n";
+import { useFileUpload } from "@/lib/use-file-upload";
 import Button from "./Button";
 import ColumnItem from "./ColumnItem";
 import ColumnStyleControl from "./ColumnStyleControl";
 import DashedOutline from "./DashedOutline";
+import LanguageToggle from "./LanguageToggle";
 import Logo from "./Logo";
 import MapLegend from "./MapLegend";
 import TimeSlider from "./TimeSlider";
@@ -34,12 +36,12 @@ const MapView = dynamic(() => import("./MapView"), {
   loading: () => <div className="h-full w-full bg-[#f2efe9]" />,
 });
 
-const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
 
 export default function MapScreen() {
   const router = useRouter();
   const { upload, setUpload } = useUpload();
+  const { t, plural } = useI18n();
 
   // Nothing uploaded (e.g. a page refresh): go back to the upload screen.
   useEffect(() => {
@@ -130,7 +132,7 @@ export default function MapScreen() {
         <div className="flex w-full items-center justify-between">
           <Logo size="sm" />
           <Button variant="secondary" onClick={openPicker} disabled={busy !== null}>
-            New upload
+            {t("map.newUpload")}
           </Button>
           <input {...inputProps} />
         </div>
@@ -150,7 +152,7 @@ export default function MapScreen() {
               {upload.fileName}
             </p>
             <p className="text-[12px] leading-[16px] text-ink-muted">
-              {plural(upload.rowCount, "row")} · {plural(upload.columns.length, "column")}
+              {plural(upload.rowCount, "map.rows")} · {plural(upload.columns.length, "map.columns")}
             </p>
           </div>
         </div>
@@ -159,13 +161,13 @@ export default function MapScreen() {
           <div className="flex flex-col gap-[2px]">
             <div className="flex items-center gap-[8px]">
               <h2 id="columns-heading" className="text-[15px] leading-[22px] font-semibold text-ink">
-                Columns
+                {t("map.columnsHeading")}
               </h2>
               <span className="rounded-full bg-accent-soft px-[8px] py-px text-[12px] leading-[18px] font-medium text-accent-text">
                 {upload.columns.length}
               </span>
             </div>
-            <p className="text-[12px] leading-[16px] text-ink-muted">Pick a style next to a column to drive the points</p>
+            <p className="text-[12px] leading-[16px] text-ink-muted">{t("map.columnsHint")}</p>
           </div>
           <ul className="flex w-full flex-col gap-[2px]">
             {upload.columns.map((column) => (
@@ -192,6 +194,10 @@ export default function MapScreen() {
           pointStyles={pointStyles}
           timeFilter={timeAxis ? { target: timeAxis.target, stepOf: timeAxis.stepOf, step } : null}
         />
+        {/* left of zoom */}
+        <div className="absolute top-[16px] right-[62px]">
+          <LanguageToggle />
+        </div>
         {/* Legend sits above the time slider when there is one. */}
         <div
           className={`pointer-events-none absolute left-[16px] flex items-end ${
@@ -235,9 +241,9 @@ export default function MapScreen() {
               <img src="/figma/icon-cloud-upload.svg" width={28} height={28} alt="" />
             </span>
             <p className="text-center text-[16px] leading-[24px] font-medium text-ink">
-              {busy ?? "Drop to replace the current data"}
+              {busy ?? t("map.dropReplace")}
             </p>
-            {!busy && <p className="text-center text-[13px] leading-[18px] text-ink-muted">{UPLOAD_FORMATS_HINT}</p>}
+            {!busy && <p className="text-center text-[13px] leading-[18px] text-ink-muted">{t("upload.formats")}</p>}
           </div>
         </div>
       )}

@@ -18,6 +18,7 @@ import {
   type StyleSpecification,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { useI18n } from "@/lib/i18n";
 import { DEFAULT_POINT_COLOR, RADIUS, type PointStyles } from "@/lib/point-style";
 import { ICON_UNIT_RADIUS_CSS, SHAPES, shapeImageName, shapeSdf } from "@/lib/shapes";
 import type { TimeTarget } from "@/lib/time-axis";
@@ -91,6 +92,11 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const labelsRef = useRef<Map<string, Marker>>(new Map());
+  const i18n = useI18n();
+  const i18nRef = useRef(i18n); // for click handlers
+  useEffect(() => {
+    i18nRef.current = i18n;
+  }, [i18n]);
   const [ready, setReady] = useState(false);
   const hasTimeSlider = timeFilter !== null;
   const pointSteps = timeFilter?.target === "points" ? timeFilter.stepOf : null;
@@ -184,7 +190,8 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
         if (map.queryRenderedFeatures(e.point, { layers: ["nodes"] }).length) return;
         const p = e.features?.[0]?.properties;
         if (!p) return;
-        popup(e, `${p.sourceName} → ${p.targetName}`, `Weight: ${Number(p.weight).toLocaleString()}`);
+        const { t, formatNumber } = i18nRef.current;
+        popup(e, `${p.sourceName} → ${p.targetName}`, `${t("map.weight")}: ${formatNumber(Number(p.weight))}`);
       });
 
       for (const layer of ["nodes", "edges-hit"]) {
@@ -297,7 +304,7 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
       <div className="absolute top-[16px] right-[16px] flex flex-col overflow-hidden rounded-[6px] bg-surface shadow-[0px_2px_10px_0px_rgba(0,0,0,0.3)]">
         <button
           type="button"
-          aria-label="Zoom in"
+          aria-label={i18n.t("map.zoomIn")}
           onClick={() => mapRef.current?.zoomIn()}
           className="flex size-[34px] cursor-pointer items-center justify-center border-b border-line hover:bg-line"
         >
@@ -305,7 +312,7 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
         </button>
         <button
           type="button"
-          aria-label="Zoom out"
+          aria-label={i18n.t("map.zoomOut")}
           onClick={() => mapRef.current?.zoomOut()}
           className="flex size-[34px] cursor-pointer items-center justify-center hover:bg-line"
         >
@@ -326,7 +333,7 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
         >
           OpenStreetMap
         </a>{" "}
-        contributors
+        {i18n.t("map.contributors")}
       </p>
     </div>
   );

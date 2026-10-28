@@ -11,10 +11,11 @@ import {
   type ColumnProfile,
   type StyleChannel,
 } from "@/lib/point-style";
+import { useI18n, type MessageKey } from "@/lib/i18n";
 import Button from "./Button";
 import StyleIcon, { type StyleIconKind } from "./StyleIcon";
 
-const LABELS: Record<StyleChannel, string> = { color: "Color", size: "Size", shape: "Shape", time: "Time" };
+const LABELS: Record<StyleChannel, MessageKey> = { color: "style.color", size: "style.size", shape: "style.shape", time: "style.time" };
 
 type ColumnStyleControlProps = {
   column: string;
@@ -46,6 +47,7 @@ export default function ColumnStyleControl({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState<Open>(null);
+  const { t, translateMessage } = useI18n();
 
   // Close on outside click, Escape, or scroll/resize (the panel is fixed-positioned).
   useEffect(() => {
@@ -83,9 +85,9 @@ export default function ColumnStyleControl({
     return (
       <span
         className="shrink-0 px-[8px] text-[11px] leading-[16px] text-ink-muted"
-        title={positional ? "Places the points on the map" : "These values are on flows, not points"}
+        title={t(positional ? "style.positionTitle" : "style.flowsTitle")}
       >
-        {positional ? "Position" : "Flows"}
+        {t(positional ? "style.position" : "style.flows")}
       </span>
     );
   }
@@ -104,14 +106,14 @@ export default function ColumnStyleControl({
         onClick={toggle}
         aria-haspopup="menu"
         aria-expanded={open !== null}
-        aria-label={`Style for ${column}: ${channel ? LABELS[channel] : "none"}`}
+        aria-label={t("style.triggerLabel", { column, channel: t(channel ? LABELS[channel] : "style.none") })}
         className={`flex h-[26px] shrink-0 cursor-pointer items-center gap-[6px] rounded-[6px] pr-[6px] pl-[8px] outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent-text ${
           channel ? "bg-chip hover:bg-[#323236]" : "border border-dashed border-line-strong hover:bg-chip"
         } ${open ? "ring-[1.5px] ring-accent-text" : ""}`}
       >
         <StyleIcon kind={iconFor(channel, profile.numeric)} />
         <span className={`text-[12px] leading-[16px] font-medium whitespace-nowrap ${channel ? "text-ink" : "text-ink-muted"}`}>
-          {channel ? LABELS[channel] : "Style"}
+          {t(channel ? LABELS[channel] : "style.style")}
         </span>
         <img src="/figma/icon-chevron-down.svg" width={12} height={12} alt="" />
       </button>
@@ -120,18 +122,18 @@ export default function ColumnStyleControl({
         <div
           ref={panelRef}
           role="menu"
-          aria-label={`Style ${column}`}
+          aria-label={t("style.menuLabel", { column })}
           className="fixed z-50 flex w-[236px] flex-col gap-[2px] rounded-[10px] border border-line-strong/60 bg-chip p-[6px] shadow-[0px_8px_24px_0px_rgba(0,0,0,0.45)]"
           style={{ top: open.rect.bottom + 6, left: open.rect.right - 236 }}
         >
           <div className="flex gap-[6px] px-[10px] pt-[6px] pb-[4px] text-[11px] leading-[14px]">
-            <span className="font-medium text-ink-muted">Style</span>
+            <span className="font-medium text-ink-muted">{t("style.style")}</span>
             <span className="truncate font-mono text-ink">{column}</span>
           </div>
           <MenuItem
             icon="none"
-            label="No style"
-            hint="Points keep the default look"
+            label={t("style.noStyle")}
+            hint={t("style.noStyleHint")}
             selected={channel === null}
             onSelect={() => {
               onChannelChange(null);
@@ -142,8 +144,8 @@ export default function ColumnStyleControl({
             <MenuItem
               key={c}
               icon={iconFor(c, profile.numeric)}
-              label={LABELS[c]}
-              hint={available[c].hint}
+              label={t(LABELS[c])}
+              hint={translateMessage(available[c].hint)}
               selected={channel === c}
               disabled={!available[c].enabled}
               onSelect={() => {
@@ -164,7 +166,7 @@ export default function ColumnStyleControl({
                 }}
                 className="flex cursor-pointer items-center gap-[8px] rounded-[6px] px-[10px] py-[8px] text-left hover:bg-white/6 focus-visible:bg-white/6 focus-visible:outline-none"
               >
-                <span className="flex-1 text-[13px] leading-[18px] font-medium text-ink">Color settings…</span>
+                <span className="flex-1 text-[13px] leading-[18px] font-medium text-ink">{t("style.colorSettings")}</span>
                 <img src="/figma/icon-chevron-right.svg" width={14} height={14} alt="" />
               </button>
             </>
@@ -176,17 +178,17 @@ export default function ColumnStyleControl({
         <div
           ref={panelRef}
           role="dialog"
-          aria-label={`Color settings for ${column}`}
+          aria-label={t("style.colorSettingsLabel", { column })}
           className="fixed z-50 flex w-[300px] flex-col gap-[14px] rounded-[10px] border border-line-strong/60 bg-chip px-[16px] pt-[14px] pb-[16px] shadow-[0px_8px_24px_0px_rgba(0,0,0,0.45)]"
           style={{ top: Math.max(8, open.rect.top - 8), left: open.rect.right + 12 }}
         >
           <div className="flex items-center gap-[8px]">
             <StyleIcon kind="color" />
-            <span className="text-[14px] leading-[20px] font-semibold text-ink">Color</span>
+            <span className="text-[14px] leading-[20px] font-semibold text-ink">{t("style.color")}</span>
             <span className="min-w-0 flex-1 truncate font-mono text-[12px] leading-[16px] text-ink-muted">{column}</span>
             <button
               type="button"
-              aria-label="Close"
+              aria-label={t("style.close")}
               onClick={() => setOpen(null)}
               className="flex size-[24px] cursor-pointer items-center justify-center rounded-[6px] hover:bg-white/6"
             >
@@ -195,7 +197,7 @@ export default function ColumnStyleControl({
           </div>
 
           <fieldset className="flex flex-col gap-[8px]">
-            <legend className="mb-[8px] text-[11px] leading-[14px] font-medium text-ink-muted">Scale</legend>
+            <legend className="mb-[8px] text-[11px] leading-[14px] font-medium text-ink-muted">{t("style.scale")}</legend>
             <div className="flex gap-[2px] rounded-[8px] bg-surface p-[2px]">
               {(["linear", "quantile", "log"] as ColorScale[]).map((scale) => (
                 <label
@@ -212,14 +214,14 @@ export default function ColumnStyleControl({
                     onChange={() => onColorOptionsChange({ colorScale: scale })}
                     className="sr-only"
                   />
-                  {scale}
+                  {t(`style.scale.${scale}`)}
                 </label>
               ))}
             </div>
           </fieldset>
 
           <label className="flex cursor-pointer items-center gap-[8px]">
-            <span className="flex-1 text-[13px] leading-[18px] text-ink">Reverse colours</span>
+            <span className="flex-1 text-[13px] leading-[18px] text-ink">{t("style.reverse")}</span>
             <input
               type="checkbox"
               role="switch"
@@ -238,7 +240,7 @@ export default function ColumnStyleControl({
           </label>
 
           <div className="flex justify-end">
-            <Button onClick={() => setOpen(null)}>Done</Button>
+            <Button onClick={() => setOpen(null)}>{t("style.done")}</Button>
           </div>
         </div>
       )}

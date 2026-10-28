@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { LanguageProvider } from "@/lib/i18n";
 import { UploadProvider } from "@/lib/upload-store";
 import "./globals.css";
 
@@ -25,7 +26,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col font-sans">
-        <UploadProvider>{children}</UploadProvider>
+        <LanguageProvider>
+          <UploadProvider>{children}</UploadProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

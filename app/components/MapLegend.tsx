@@ -6,13 +6,15 @@
 
 import { useState } from "react";
 import { formatValue, SUNSET, type LegendSection } from "@/lib/point-style";
+import { useI18n } from "@/lib/i18n";
 import { shapePoints } from "@/lib/shapes";
 import StyleIcon from "./StyleIcon";
 
-const TITLES = { color: "Color", size: "Size", shape: "Shape" } as const;
+const TITLES = { color: "style.color", size: "style.size", shape: "style.shape" } as const;
 
 export default function MapLegend({ sections }: { sections: LegendSection[] }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const { t } = useI18n();
   if (!sections.length) return null;
 
   const toggle = (key: string) =>
@@ -25,7 +27,7 @@ export default function MapLegend({ sections }: { sections: LegendSection[] }) {
 
   return (
     <section
-      aria-label="Legend"
+      aria-label={t("legend.label")}
       className="flex max-h-full w-[212px] flex-col gap-[14px] overflow-y-auto rounded-[12px] scheme-dark border border-line bg-surface/94 px-[14px] py-[12px] shadow-[0px_4px_16px_0px_rgba(0,0,0,0.3)]"
     >
       {sections.map((section) => {
@@ -43,7 +45,7 @@ export default function MapLegend({ sections }: { sections: LegendSection[] }) {
               className="flex w-full cursor-pointer items-center gap-[6px] rounded-[4px] text-left outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent-text"
             >
               <StyleIcon kind={icon} />
-              <span className="text-[11px] leading-[16px] font-semibold text-ink">{TITLES[section.channel]}</span>
+              <span className="text-[11px] leading-[16px] font-semibold text-ink">{t(TITLES[section.channel])}</span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-[16px] text-ink-muted">{section.column}</span>
               <img
                 src="/figma/icon-chevron-down.svg"

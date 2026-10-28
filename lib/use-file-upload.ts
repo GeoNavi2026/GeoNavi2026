@@ -6,6 +6,7 @@
 
 import { useRef, useState, type ChangeEvent } from "react";
 import { getDataset } from "./api";
+import { useI18n } from "./i18n";
 import { summarizeDataset, type UploadedData } from "./upload-summary";
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
@@ -13,7 +14,6 @@ export const UPLOAD_ACCEPT = [
   ".csv,.json,.geojson,.parquet,.geoparquet,.kml,.gpx,.zip",
   "text/csv,application/json,application/geo+json,application/vnd.google-earth.kml+xml,application/gpx+xml,application/zip",
 ].join(",");
-export const UPLOAD_FORMATS_HINT = "CSV, GeoJSON, GeoParquet, KML, GPX or zipped shapefile · up to 50 MB";
 const SAMPLE_DATASET_ID = "gnv-commute";
 
 function errorMessage(err: unknown) {
@@ -29,6 +29,7 @@ export function useFileUpload(onLoaded: (upload: UploadedData) => void, { keepBu
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { t, translateMessage } = useI18n();
 
   async function run(message: string, load: () => Promise<UploadedData>) {
     setBusy(message);
@@ -37,7 +38,7 @@ export function useFileUpload(onLoaded: (upload: UploadedData) => void, { keepBu
       onLoaded(await load());
       if (!keepBusyOnSuccess) setBusy(null);
     } catch (err) {
-      setError(errorMessage(err));
+      setError(translateMessage(errorMessage(err)));
       setBusy(null);
     }
   }
@@ -45,10 +46,10 @@ export function useFileUpload(onLoaded: (upload: UploadedData) => void, { keepBu
   function uploadFile(file: File) {
     if (busy) return;
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError("That file is larger than 50 MB.");
+      setError(t("upload.tooLarge"));
       return;
     }
-    void run(`Processing ${file.name}…`, async () => {
+    void run(t("upload.processing", { name: file.name }), async () => {
       const { processUpload } = await import("./process-upload");
       const { dataset, table } = await processUpload(file);
       return { fileName: file.name, dataset, ...table };
@@ -57,7 +58,7 @@ export function useFileUpload(onLoaded: (upload: UploadedData) => void, { keepBu
 
   function loadSample() {
     if (busy) return;
-    void run("Loading the sample dataset…", async () => {
+    void run(t("upload.loadingSample"), async () => {
       const dataset = await getDataset(SAMPLE_DATASET_ID);
       return { fileName: dataset.meta.name, dataset, ...summarizeDataset(dataset) };
     });
