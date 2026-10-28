@@ -7,8 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Time is no longer a style option. The bar at the bottom of the map is now an
+  always-visible filter bar with a column picker: it steps through the values
+  of the picked column (hours for time columns, values or ranges for numbers,
+  distinct values for text) and shows only the matching points or flows. It
+  starts on a time column when the data has one, otherwise on "No filter".
+- Points outside the filter's current step are faded instead of hidden.
+- The filter bar has a One/Many mode. In Many, drag across the bars to select
+  a range, Ctrl/⌘-click to add or remove single values and Shift-click to
+  extend; Play slides the whole selection.
+
 ### Fixed
 
+- GeoParquet flow columns (`source`, `target`, `weight`) are treated as flow
+  columns: points from the same table carry them as empty values, which made
+  them look like point columns with no values.
+- Long whole-number ids such as tract ids show in full on the filter bar
+  ("12001000201") instead of compacted to "12B".
 - The time slider supports click-and-drag again: dragging the thumb used to
   start a native image drag (which could also trigger a bogus "Unsupported file
   type" upload). Dragging anywhere on the bars or track now scrubs.
@@ -20,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Double-clicking a point (within a few pixels, or on its name) isolates its
+  flows: only flows starting or ending there stay on the map and unconnected
+  points fade (their names dim but stay double-clickable). Ctrl/⌘-double-click adds or removes more points. A chip at the
+  top left names the isolated points; its ×, Esc or double-clicking the point
+  again shows every flow. Works alongside the filter bar.
 - "Time" style option: assigning a column to Time brings up the time slider,
   which steps through that column's values and shows only the points or flows
   at the current step. Time columns step through the 24 hours, number columns

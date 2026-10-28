@@ -4,19 +4,19 @@
 // - Time columns (timestamps or hours) step through the 24 hours of the day.
 // - Number columns step through each value, or 24 even ranges when there are
 //   more than 24 distinct values.
-// - Text columns step through each distinct value (up to MAX_TIME_STEPS).
+// - Text columns step through each distinct value (up to MAX_FILTER_STEPS).
 
 import type { AxisLabel, Hint } from "./format";
 import { edgeHour } from "./time";
 import type { DatasetResponse, Edge } from "./types";
 
-export const MAX_TIME_STEPS = 100;
+export const MAX_FILTER_STEPS = 100;
 export const NUMBER_BINS = 24;
 // Hours labelled under the slider when it steps through the day.
 const HOUR_TICKS = [0, 6, 12, 18, 23];
 
 type Scalar = number | string | boolean | null | undefined;
-export type TimeTarget = "points" | "flows";
+export type FilterTarget = "points" | "flows";
 
 // Fields every flow has; a column with one of these names reads it directly.
 const EDGE_FIELDS = new Set(["id", "source", "target", "weight", "t"]);
@@ -38,7 +38,7 @@ const asNumber = (v: Scalar) => {
 };
 
 /** Values of a column on points or flows, with each item's id and weight. */
-function items(dataset: DatasetResponse, column: string, target: TimeTarget) {
+function items(dataset: DatasetResponse, column: string, target: FilterTarget) {
   return target === "points"
     ? dataset.nodes.map((n) => ({ id: n.id, value: n.properties?.[column] as Scalar, weight: 1 }))
     : dataset.edges.map((e) => ({ id: e.id, value: edgeValue(e, column), weight: e.weight }));
@@ -65,24 +65,24 @@ export function flowStats(dataset: DatasetResponse, column: string): ValueStats 
   return { present, numeric: present && unique.size > 0 && numeric, unique: unique.size };
 }
 
-export interface TimeAvailability {
+export interface FilterAvailability {
   enabled: boolean;
   /** Formatted for the UI language by i18n's `hint()`. */
   hint: Hint;
 }
 
-export function timeAvailability(stats: ValueStats | null, isTimeColumn: boolean): TimeAvailability {
+export function filterAvailability(stats: ValueStats | null, isTimeColumn: boolean): FilterAvailability {
   if (!stats?.present || stats.unique === 0) return { enabled: false, hint: { key: "noValues" } };
   if (stats.unique < 2) return { enabled: false, hint: { key: "needsTwo" } };
   if (isTimeColumn) return { enabled: true, hint: { key: "hours" } };
   if (stats.numeric && stats.unique > NUMBER_BINS) return { enabled: true, hint: { key: "rangeSteps", n: NUMBER_BINS } };
-  if (stats.unique > MAX_TIME_STEPS) return { enabled: false, hint: { key: "tooMany", n: stats.unique } };
+  if (stats.unique > MAX_FILTER_STEPS) return { enabled: false, hint: { key: "tooMany", n: stats.unique } };
   return { enabled: true, hint: { key: "valueSteps", n: stats.unique } };
 }
 
-export interface TimeAxis {
+export interface FilterAxis {
   column: string;
-  target: TimeTarget;
+  target: FilterTarget;
   /** Readout label for each step, as raw values (formatted per language by the slider). */
   labels: AxisLabel[];
   /** Labels under the track: one per step when they're the same length as `labels`, else spread out. */
@@ -101,12 +101,12 @@ function spreadTicks(labels: AxisLabel[]) {
   return [labels[0], labels[Math.floor((labels.length - 1) / 2)], labels[labels.length - 1]];
 }
 
-export function buildTimeAxis(
+export function buildFilterAxis(
   dataset: DatasetResponse,
   column: string,
-  target: TimeTarget,
+  target: FilterTarget,
   isTimeColumn: boolean
-): TimeAxis {
+): FilterAxis {
   const rows = items(dataset, column, target).filter((r) => !isEmpty(r.value));
   const stepOf = new Map<string, number>();
   let labels: AxisLabel[];
@@ -137,7 +137,10 @@ export function buildTimeAxis(
         ? distinct.sort((a, b) => Number(a) - Number(b))
         : distinct.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       const index = new Map(sorted.map((v, i) => [v, i]));
-      labels = sorted.map((v): AxisLabel => (numeric ? { kind: "value", value: Number(v) } : { kind: "text", text: v }));
+      // Long whole numbers (tract ids, codes) are identifiers: show them as
+      // written, since compacting would turn every one into "12B".
+      const ids = numeric && (numbers as number[]).every((n) => Number.isInteger(n) && Math.abs(n) >= 1e7);
+      labels = sorted.map((v): AxisLabel => (numeric && !ids ? { kind: "value", value: Number(v) } : { kind: "text", text: v }));
       ticks = spreadTicks(labels);
       stepFor = (v) => index.get(String(v)) ?? null;
     }

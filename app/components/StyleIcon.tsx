@@ -1,19 +1,11 @@
 /* eslint-disable @next/next/no-img-element -- static SVG icons exported from Figma */
 
 // Figma component "Style icon" (20×14): the glyph for a style channel.
-export type StyleIconKind = "color" | "rainbow" | "size" | "shape" | "time" | "none";
+export type StyleIconKind = "color" | "rainbow" | "size" | "shape" | "none";
 
 export default function StyleIcon({ kind }: { kind: StyleIconKind }) {
   if (kind === "size") return <img src="/figma/style-size.svg" width={20} height={14} alt="" className="shrink-0" />;
   if (kind === "shape") return <img src="/figma/style-shape.svg" width={20} height={14} alt="" className="shrink-0" />;
-  if (kind === "time") {
-    return (
-      <svg aria-hidden width={20} height={14} viewBox="0 0 20 14" fill="none" className="shrink-0">
-        <circle cx="10" cy="7" r="5.5" stroke="#FAFAFA" strokeWidth="1.5" />
-        <path d="M10 4.25V7l1.9 1.3" stroke="#FAFAFA" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
   if (kind === "none") {
     return (
       <span aria-hidden className="relative h-[14px] w-[20px] shrink-0">

@@ -15,7 +15,7 @@ import { useI18n, type MessageKey } from "@/lib/i18n";
 import Button from "./Button";
 import StyleIcon, { type StyleIconKind } from "./StyleIcon";
 
-const LABELS: Record<StyleChannel, MessageKey> = { color: "style.color", size: "style.size", shape: "style.shape", time: "style.time" };
+const LABELS: Record<StyleChannel, MessageKey> = { color: "style.color", size: "style.size", shape: "style.shape" };
 
 type ColumnStyleControlProps = {
   column: string;
@@ -79,9 +79,8 @@ export default function ColumnStyleControl({
     if (open?.kind === "menu") panelRef.current?.querySelector<HTMLButtonElement>("[role=menuitemradio]:not([aria-disabled=true])")?.focus();
   }, [open]);
 
-  const available = channelAvailability(profile);
-  // lat/lon columns place the points; flow-only columns can only drive Time.
-  if (positional || (!profile.onPoints && !available.time.enabled)) {
+  // lat/lon columns place the points; flow-only columns can't style points.
+  if (positional || !profile.onPoints) {
     return (
       <span
         className="shrink-0 px-[8px] text-[11px] leading-[16px] text-ink-muted"
@@ -112,6 +111,7 @@ export default function ColumnStyleControl({
     items[targets[e.key]].focus(); // skips disabled
   }
 
+  const available = channelAvailability(profile);
   const toggle = () => {
     if (open) return setOpen(null);
     const rect = triggerRef.current?.getBoundingClientRect();

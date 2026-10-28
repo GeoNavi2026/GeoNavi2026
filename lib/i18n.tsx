@@ -5,6 +5,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   formatAxisLabel,
+  formatAxisSpan,
   formatNumber,
   formatValue,
   pluralCategory,
@@ -102,7 +103,6 @@ const en = {
   "style.color": "Color",
   "style.size": "Size",
   "style.shape": "Shape",
-  "style.time": "Time",
   "style.style": "Style",
   "style.none": "none",
   "style.noStyle": "No style",
@@ -127,11 +127,26 @@ const en = {
 
   "slider.play": "Play",
   "slider.pause": "Pause",
-  "slider.heading": "TIME",
-  "slider.label": "Time: {column}",
+  "slider.label": "Filter: {column}",
+
+  "filter.heading": "FILTER",
+  "filter.column": "Filter by column",
+  "filter.none": "No filter",
+  "filter.all": "All data",
+  "filter.empty": "Pick a column to step through its values",
+  "filter.mode": "Selection",
+  "filter.one": "One",
+  "filter.many": "Many",
+  "filter.manyHint": "Drag to select a range. Ctrl/⌘-click to add or remove values.",
+  "filter.selected.one": "{n} value",
+  "filter.selected.other": "{n} values",
+
+  "isolate.one": "Flows for {name}",
+  "isolate.many.one": "Flows for {n} point",
+  "isolate.many.other": "Flows for {n} points",
+  "isolate.clear": "Show all flows (Esc)",
 
   // Style menu hints; `{n}` is formatted for the language. `.one`/`.other` pick the plural form.
-  "hint.pointsOnly": "Points only",
   "hint.noValuesOnPoints": "No values on points",
   "hint.sunset": "Sunset ramp, low to high",
   "hint.rainbow": "Rainbow, one colour per value",
@@ -191,7 +206,6 @@ const ptBR: Record<MessageKey, string> = {
   "style.color": "Cor",
   "style.size": "Tamanho",
   "style.shape": "Forma",
-  "style.time": "Tempo",
   "style.style": "Estilo",
   "style.none": "nenhum",
   "style.noStyle": "Sem estilo",
@@ -216,10 +230,25 @@ const ptBR: Record<MessageKey, string> = {
 
   "slider.play": "Reproduzir",
   "slider.pause": "Pausar",
-  "slider.heading": "TEMPO",
-  "slider.label": "Tempo: {column}",
+  "slider.label": "Filtro: {column}",
 
-  "hint.pointsOnly": "Somente pontos",
+  "filter.heading": "FILTRO",
+  "filter.column": "Filtrar por coluna",
+  "filter.none": "Sem filtro",
+  "filter.all": "Todos os dados",
+  "filter.empty": "Escolha uma coluna para percorrer seus valores",
+  "filter.mode": "Seleção",
+  "filter.one": "Um",
+  "filter.many": "Vários",
+  "filter.manyHint": "Arraste para selecionar um intervalo. Ctrl/⌘ + clique para adicionar ou remover valores.",
+  "filter.selected.one": "{n} valor",
+  "filter.selected.other": "{n} valores",
+
+  "isolate.one": "Fluxos de {name}",
+  "isolate.many.one": "Fluxos de {n} ponto",
+  "isolate.many.other": "Fluxos de {n} pontos",
+  "isolate.clear": "Mostrar todos os fluxos (Esc)",
+
   "hint.noValuesOnPoints": "Sem valores nos pontos",
   "hint.sunset": "Degradê laranja, do menor para o maior",
   "hint.rainbow": "Arco-íris, uma cor por valor",
@@ -244,14 +273,16 @@ type I18n = {
   t: (key: MessageKey, vars?: Vars) => string;
   plural: (
     count: number,
-    key: "map.rows" | "map.columns" | "map.points" | "map.flows"
+    key: "map.rows" | "map.columns" | "map.points" | "map.flows" | "filter.selected" | "isolate.many"
   ) => string;
   /** Full number with grouping, e.g. a flow's weight. */
   formatNumber: (n: number) => string;
   /** Compact number for legends, e.g. "18K" / "18 mil". */
   formatValue: (n: number) => string;
-  /** A Time slider step or tick. */
+  /** A filter step or tick. */
   formatAxisLabel: (label: AxisLabel) => string;
+  /** A run of neighbouring filter steps. */
+  formatAxisSpan: (first: AxisLabel, last: AxisLabel) => string;
   /** A style menu hint from lib/ code. */
   hint: (hint: Hint) => string;
   translateMessage: (message: string) => string;
@@ -306,6 +337,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       formatNumber: number,
       formatValue: (n) => formatValue(n, lang),
       formatAxisLabel: (label) => formatAxisLabel(label, lang),
+      formatAxisSpan: (first, last) => formatAxisSpan(first, last, lang),
       t: (key, vars) => fill(dict[key], vars),
       plural: (count, key) => fill(dict[`${key}.${pluralCategory(count, lang)}`], { n: number(count) }),
       hint: (hint) => {

@@ -4,7 +4,7 @@
 // OpenStreetMap base map with the selected dataset drawn on top, styled to
 // the Figma "Map view". Browser-only: load it through next/dynamic with ssr: false.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FeatureCollection } from "geojson";
 import {
   Map as MapLibreMap,
@@ -15,13 +15,14 @@ import {
   type FilterSpecification,
   type GeoJSONSource,
   type MapLayerMouseEvent,
+  type MapMouseEvent,
   type StyleSpecification,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useI18n } from "@/lib/i18n";
 import { DEFAULT_POINT_COLOR, RADIUS, type PointStyles } from "@/lib/point-style";
 import { ICON_UNIT_RADIUS_CSS, SHAPES, shapeImageName, shapeSdf } from "@/lib/shapes";
-import type { TimeTarget } from "@/lib/time-axis";
+import type { FilterTarget } from "@/lib/filter-axis";
 import { toGeoJson } from "@/lib/to-geojson";
 import type { DatasetResponse } from "@/lib/types";
 
@@ -61,10 +62,9 @@ const EDGE_OFFSET: ExpressionSpecification = ["+", ["/", EDGE_WIDTH, 2], 2];
 const MAX_LABELS = 200;
 
 // The Figma "Map view" keeps 80px around the data. Uploaded bounding boxes hug
-// the outermost nodes, so also leave room for name pills on the right and, when
-// shown, for the time slider (98px tall, 42px from the bottom).
+// the outermost nodes, so also leave room for name pills on the right; screens
+// with overlays at the bottom (the filter bar) pass `bottomInset`.
 const FIT_PADDING = { top: 80, right: 160, bottom: 80, left: 80 };
-const TIME_SLIDER_PADDING = 200;
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -73,34 +73,61 @@ function escapeHtml(s: string) {
 type MapViewProps = {
   dataset: DatasetResponse | null;
   /**
-   * The Time style: show only the points or flows at `step` of the time
-   * slider (`stepOf` maps their ids to steps). Null shows everything.
+   * The filter bar: show only the points or flows whose step is in `steps`
+   * (`stepOf` maps their ids to steps). Null shows everything.
    */
-  timeFilter?: TimeFilter | null;
+  filter?: PointFlowFilter | null;
+  /** Space covered at the bottom of the map, kept clear when fitting the data. */
+  bottomInset?: number;
   /** Column-driven point colours, sizes and shapes; null or empty keeps the default look. */
   pointStyles?: PointStyles | null;
+  /**
+   * Isolated points: only flows starting or ending at one of these are shown,
+   * and points not connected to them are faded. Null shows every flow.
+   */
+  isolated?: string[] | null;
+  /**
+   * A point was double-clicked (`additive` when Ctrl/⌘ was held). Return true
+   * when it was handled to skip the map's double-click zoom.
+   */
+  onPointDoubleClick?: (id: string, options: { additive: boolean }) => boolean;
 };
 
 // Points are SDF shape icons so colour, size, shape and outline can vary per point.
 const NODE_RADIUS: ExpressionSpecification = ["coalesce", ["get", "radius"], RADIUS.default];
+// Big points first, so small ones stay visible on top.
+const NODE_SORT: ExpressionSpecification = ["-", 0, NODE_RADIUS];
+// Points outside the filter's selected steps stay on the map, faded, so they can
+// still be double-clicked to jump the filter to their value.
+const FADED_OPACITY = 0.35;
+// How far (px) from a point a double-click still counts as on it.
+const DOUBLE_CLICK_SLOP = 10;
 // Distance from a point's centre to its name pill.
 const labelOffset = (radius: number): [number, number] => [radius + 6, 0];
 
-export type TimeFilter = { target: TimeTarget; stepOf: Map<string, number>; step: number };
+export type PointFlowFilter = { target: FilterTarget; stepOf: Map<string, number>; steps: number[] };
 
-export default function MapView({ dataset, pointStyles = null, timeFilter = null }: MapViewProps) {
+export default function MapView({
+  dataset,
+  pointStyles = null,
+  filter = null,
+  bottomInset = FIT_PADDING.bottom,
+  isolated = null,
+  onPointDoubleClick,
+}: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const labelsRef = useRef<Map<string, Marker>>(new Map());
   const i18n = useI18n();
   const i18nRef = useRef(i18n); // for click handlers
+  const onPointDoubleClickRef = useRef(onPointDoubleClick);
   useEffect(() => {
     i18nRef.current = i18n;
-  }, [i18n]);
+    onPointDoubleClickRef.current = onPointDoubleClick;
+  }, [i18n, onPointDoubleClick]);
   const [ready, setReady] = useState(false);
-  const hasTimeSlider = timeFilter !== null;
-  const pointSteps = timeFilter?.target === "points" ? timeFilter.stepOf : null;
-  const flowSteps = timeFilter?.target === "flows" ? timeFilter.stepOf : null;
+  const pointSteps = filter?.target === "points" ? filter.stepOf : null;
+  const flowSteps = filter?.target === "flows" ? filter.stepOf : null;
 
   // Create the map once.
   useEffect(() => {
@@ -160,8 +187,7 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
           "icon-size": ["/", NODE_RADIUS, ICON_UNIT_RADIUS_CSS],
           "icon-allow-overlap": true,
           "icon-ignore-placement": true,
-          // Big points first, so small ones stay visible on top.
-          "symbol-sort-key": ["-", 0, NODE_RADIUS],
+          "symbol-sort-key": NODE_SORT,
         },
         paint: {
           "icon-color": ["coalesce", ["get", "color"], DEFAULT_POINT_COLOR],
@@ -183,6 +209,49 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
         const p = e.features?.[0]?.properties;
         if (!p) return;
         popup(e, String(p.name), String(p.id));
+      });
+
+      // Double-click a point (or its name pill) to hand it to onPointDoubleClick.
+      // A full-strength name under the cursor wins, since it's drawn on top
+      // (the last one in DOM order, where names overlap).
+      // Otherwise points are small, so anything within DOUBLE_CLICK_SLOP px of
+      // a point's visible edge counts and the nearest wins; distance is measured
+      // from the centre because icon hit boxes are much larger than the drawn
+      // shape. A dimmed name comes last. Name pills let clicks through, so
+      // they're hit-tested here.
+      map.on("dblclick", (e: MapMouseEvent) => {
+        const handle = onPointDoubleClickRef.current;
+        if (!handle) return;
+        let id: string | null = null;
+        let dimmed: string | null = null;
+        const { clientX, clientY } = e.originalEvent;
+        for (const [nodeId, marker] of labelsRef.current) {
+          const el = marker.getElement();
+          const r = el.getBoundingClientRect();
+          if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) continue;
+          if (el.dataset.faded !== "true") id = nodeId;
+          else dimmed = nodeId;
+        }
+        if (id === null) {
+          const { x, y } = e.point;
+          let best = Infinity;
+          const reach = RADIUS.max + DOUBLE_CLICK_SLOP;
+          const near = map.queryRenderedFeatures([[x - reach, y - reach], [x + reach, y + reach]], { layers: ["nodes"] });
+          for (const feature of near) {
+            if (feature.geometry.type !== "Point") continue;
+            const at = map.project(feature.geometry.coordinates as [number, number]);
+            const distance = Math.hypot(at.x - x, at.y - y);
+            const radius = Number(feature.properties.radius ?? RADIUS.default);
+            if (distance <= radius + DOUBLE_CLICK_SLOP && distance < best) {
+              best = distance;
+              id = String(feature.properties.id);
+            }
+          }
+        }
+        id ??= dimmed;
+        // Ctrl/⌘ adds the point to (or removes it from) the isolated points.
+        const additive = e.originalEvent.ctrlKey || e.originalEvent.metaKey;
+        if (id !== null && handle(id, { additive })) e.preventDefault();
       });
 
       map.on("click", "edges-hit", (e: MapLayerMouseEvent) => {
@@ -236,17 +305,17 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
           [maxLon, maxLat],
         ],
         {
-          padding: { ...FIT_PADDING, bottom: hasTimeSlider ? TIME_SLIDER_PADDING : FIT_PADDING.bottom },
+          padding: { ...FIT_PADDING, bottom: bottomInset },
           duration: 600,
           maxZoom: 15,
         }
       );
     }
-    // Refit only when the data changes, not when the time slider appears.
+    // Refit only when the data changes, not on every filter step.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataset, ready]);
 
-  // Flows, tagged with their time step when the Time style is on a flow column.
+  // Flows, tagged with their filter step when the filter is on a flow column.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
@@ -283,19 +352,58 @@ export default function MapView({ dataset, pointStyles = null, timeFilter = null
     map.setPaintProperty("nodes", "icon-halo-width", styled ? 1.5 : 2.5);
   }, [dataset, pointStyles, pointSteps, ready]);
 
-  // Time filter: only the points or flows at the slider's current step.
-  const step = timeFilter?.step ?? null;
+  // Isolation: the isolated points plus every point sharing a flow with them.
+  const isolatedKey = isolated?.join(",") ?? null;
+  const connected = useMemo(() => {
+    if (!isolated || !dataset) return null;
+    const ids = new Set(isolated);
+    for (const edge of dataset.edges) {
+      if (isolated.includes(edge.source)) ids.add(edge.target);
+      if (isolated.includes(edge.target)) ids.add(edge.source);
+    }
+    return ids;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `isolated` is tracked by isolatedKey
+  }, [isolatedKey, dataset]);
+
+  // Filter bar and isolation: flows that fail either are hidden; points that
+  // fail either are faded (drawn underneath the others) and lose their label.
+  const steps = filter?.steps ?? null;
+  // Effects re-run on content, not on a new array with the same steps.
+  const stepsKey = steps?.join(",") ?? null;
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
-    const atStep: FilterSpecification | null = step === null ? null : ["==", ["get", "step"], step];
-    map.setFilter("edges", flowSteps ? atStep : null);
-    map.setFilter("edges-hit", flowSteps ? atStep : null);
-    map.setFilter("nodes", pointSteps ? atStep : null);
-    for (const [id, marker] of labelsRef.current) {
-      marker.getElement().style.display = !pointSteps || pointSteps.get(id) === step ? "" : "none";
+    const selected = new Set(steps ?? []);
+    const atStep: ExpressionSpecification = ["in", ["get", "step"], ["literal", [...selected]]];
+
+    const flowTests: ExpressionSpecification[] = [];
+    if (flowSteps && steps !== null) flowTests.push(atStep);
+    if (isolated) {
+      const ids: ExpressionSpecification = ["literal", isolated];
+      flowTests.push(["any", ["in", ["get", "source"], ids], ["in", ["get", "target"], ids]]);
     }
-  }, [step, flowSteps, pointSteps, ready]);
+    const flowFilter: FilterSpecification | null = flowTests.length ? ["all", ...flowTests] : null;
+    map.setFilter("edges", flowFilter);
+    map.setFilter("edges-hit", flowFilter);
+
+    const pointTests: ExpressionSpecification[] = [];
+    if (pointSteps) pointTests.push(atStep);
+    if (connected) pointTests.push(["in", ["get", "id"], ["literal", [...connected]]]);
+    const shown: ExpressionSpecification = ["all", ...pointTests];
+    map.setPaintProperty("nodes", "icon-opacity", pointTests.length ? ["case", shown, 1, FADED_OPACITY] : 1);
+    map.setLayoutProperty("nodes", "symbol-sort-key", pointTests.length ? ["+", NODE_SORT, ["case", shown, 1000, 0]] : NODE_SORT);
+    for (const [id, marker] of labelsRef.current) {
+      const passesFilter = !pointSteps || selected.has(pointSteps.get(id) ?? -1);
+      const passesIsolation = !connected || connected.has(id);
+      // Faded points keep a dimmed name, so it can still be double-clicked.
+      const faded = !(passesFilter && passesIsolation);
+      marker.setOpacity(String(faded ? FADED_OPACITY : 1));
+      const el = marker.getElement();
+      el.dataset.faded = String(faded);
+      el.style.zIndex = faded ? "0" : "1";
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `steps`/`isolated` are tracked by their keys
+  }, [stepsKey, flowSteps, pointSteps, isolatedKey, connected, ready]);
 
   return (
     <div className="relative h-full w-full">

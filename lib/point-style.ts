@@ -7,25 +7,24 @@
 // - Size: number columns only.
 // - Shape: any column with at most MAX_SHAPE_VALUES distinct values; numbers
 //   are treated as categories.
-// - Time: steps the time slider through the column's values (see time-axis.ts);
-//   works on points or flows.
 // - A column drives at most one channel, and each channel one column.
+// The filter bar at the bottom of the map is separate (see filter-axis.ts);
+// `filterOption` says whether a column can drive it.
 
 import type { Hint } from "./format";
 import { SHAPES, type ShapeName } from "./shapes";
-import { flowStats, timeAvailability, type TimeTarget, type ValueStats } from "./time-axis";
+import { flowStats, filterAvailability, type FilterTarget, type ValueStats } from "./filter-axis";
 import type { DatasetResponse } from "./types";
 
 
-export type StyleChannel = "color" | "size" | "shape" | "time";
-export const STYLE_CHANNELS: StyleChannel[] = ["color", "size", "shape", "time"];
+export type StyleChannel = "color" | "size" | "shape";
+export const STYLE_CHANNELS: StyleChannel[] = ["color", "size", "shape"];
 export type ColorScale = "linear" | "quantile" | "log";
 
 export interface PointStyleState {
   color: string | null;
   size: string | null;
   shape: string | null;
-  time: string | null;
   colorScale: ColorScale;
   colorReverse: boolean;
 }
@@ -34,7 +33,6 @@ export const DEFAULT_POINT_STYLE: PointStyleState = {
   color: null,
   size: null,
   shape: null,
-  time: null,
   colorScale: "linear",
   colorReverse: false,
 };
@@ -64,34 +62,37 @@ export interface ColumnProfile {
   onPoints: boolean;
   numeric: boolean;
   uniqueCount: number;
-  /** The column's values on flows, for the Time style. */
+  /** The column's values on flows, for the filter bar. */
   flows: ValueStats;
-  /** Named like a time column ("time", "timestamp", …): Time steps through hours. */
+  /** Named like a time column ("time", "timestamp", …): the filter steps through hours. */
   isTimeColumn: boolean;
-  /** Where the Time style filters: points when they carry the column, else flows. */
-  timeTarget: TimeTarget | null;
+  /** What the filter bar hides: points when they carry the column, else flows. */
+  filterTarget: FilterTarget | null;
 }
 
 export function profileColumn(dataset: DatasetResponse, column: string, isTimeColumn = false): ColumnProfile {
-  let onPoints = false;
+  let keyed = false;
   let numeric = true;
   const unique = new Set<string>();
   for (const node of dataset.nodes) {
     if (!node.properties || !(column in node.properties)) continue;
-    onPoints = true;
+    keyed = true;
     const value = node.properties[column];
     if (isEmpty(value)) continue;
     unique.add(String(value));
     if (asNumber(value) === null) numeric = false;
   }
   const flows = flowStats(dataset, column);
+  // Points and flows can share one table (e.g. GeoParquet), leaving flow
+  // columns as empty keys on points: those still belong to flows.
+  const onPoints = unique.size > 0 || (keyed && flows.unique === 0);
   return {
     onPoints,
     numeric: onPoints && unique.size > 0 && numeric,
     uniqueCount: unique.size,
     flows,
     isTimeColumn,
-    timeTarget: onPoints ? "points" : flows.present ? "flows" : null,
+    filterTarget: onPoints ? "points" : flows.present ? "flows" : null,
   };
 }
 
@@ -106,20 +107,20 @@ function colorHint(numeric: boolean, unique: number): Hint {
   return { key: unique <= CATEGORY_COLORS.length ? "colorblind" : "rainbow" };
 }
 
-export function channelAvailability(profile: ColumnProfile): Record<StyleChannel, ChannelAvailability> {
-  const n = profile.uniqueCount;
-  const time = timeAvailability(
-    profile.timeTarget === "points"
-      ? { present: true, numeric: profile.numeric, unique: n }
-      : profile.timeTarget === "flows" ? profile.flows : null,
+/** Whether a column can drive the filter bar, and how it would step. */
+export function filterOption(profile: ColumnProfile): ChannelAvailability {
+  return filterAvailability(
+    profile.filterTarget === "points"
+      ? { present: true, numeric: profile.numeric, unique: profile.uniqueCount }
+      : profile.filterTarget === "flows" ? profile.flows : null,
     profile.isTimeColumn
   );
-  if (!profile.onPoints) {
-    const pointsOnly: ChannelAvailability = { enabled: false, hint: { key: "pointsOnly" } };
-    return { color: pointsOnly, size: pointsOnly, shape: pointsOnly, time };
-  }
+}
+
+/** Style channels for a column on points; flow-only columns can't style points. */
+export function channelAvailability(profile: ColumnProfile): Record<StyleChannel, ChannelAvailability> {
+  const n = profile.uniqueCount;
   return {
-    time,
     color: n === 0
       ? { enabled: false, hint: { key: "noValuesOnPoints" } }
       : { enabled: true, hint: colorHint(profile.numeric, n) },
