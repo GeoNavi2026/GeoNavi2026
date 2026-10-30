@@ -1,7 +1,9 @@
 /* eslint-disable @next/next/no-img-element -- static SVG icons exported from Figma */
 
 // Figma component "Style icon" (20×14): the glyph for a style channel.
-export type StyleIconKind = "color" | "rainbow" | "size" | "shape" | "none";
+import { FLOW_RAMP, SUNSET } from "@/lib/point-style";
+
+export type StyleIconKind = "color" | "flowColor" | "rainbow" | "size" | "shape" | "width" | "none";
 
 export default function StyleIcon({ kind }: { kind: StyleIconKind }) {
   if (kind === "size") return <img src="/figma/style-size.svg" width={20} height={14} alt="" className="shrink-0" />;
@@ -14,8 +16,17 @@ export default function StyleIcon({ kind }: { kind: StyleIconKind }) {
       </span>
     );
   }
+  if (kind === "width") {
+    return (
+      <svg aria-hidden width={20} height={14} viewBox="0 0 20 14" className="shrink-0">
+        <polygon points="1,6.25 19,3 19,11 1,7.75" className="fill-ink" />
+      </svg>
+    );
+  }
   const gradient = kind === "color"
-    ? "linear-gradient(90deg, #fef3c7, #f97316, #9a3412)"
+    ? `linear-gradient(90deg, ${SUNSET.join(", ")})`
+    : kind === "flowColor"
+    ? `linear-gradient(90deg, ${FLOW_RAMP.join(", ")})`
     : "linear-gradient(90deg, #ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #8b5cf6, #ec4899)";
   return (
     <span aria-hidden className="relative h-[14px] w-[20px] shrink-0">

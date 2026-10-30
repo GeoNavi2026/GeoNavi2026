@@ -12,11 +12,18 @@ import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   assignChannel,
   channelForColumn,
+  computeFlowStyles,
   computePointStyles,
+  DEFAULT_FLOW_STYLE,
   DEFAULT_POINT_STYLE,
+  FLOW_CHANNELS,
   filterOption,
   profileColumn,
+  STYLE_CHANNELS,
+  type FlowChannel,
+  type FlowStyleState,
   type PointStyleState,
+  type StyleChannel,
 } from "@/lib/point-style";
 import { buildFilterAxis } from "@/lib/filter-axis";
 import { useUpload } from "@/lib/upload-store";
@@ -58,6 +65,7 @@ export default function MapScreen() {
   const [isolated, setIsolated] = useState<string[] | null>(null);
   const [playing, setPlaying] = useState(false);
   const [pointStyle, setPointStyle] = useState<PointStyleState>(DEFAULT_POINT_STYLE);
+  const [flowStyle, setFlowStyle] = useState<FlowStyleState>(DEFAULT_FLOW_STYLE);
   // Column picked in the filter bar; undefined until the user picks one (or "No filter").
   const [filterChoice, setFilterChoice] = useState<string | null | undefined>(undefined);
   const { busy, error, uploadFile, openPicker, inputProps } = useFileUpload(setUpload);
@@ -71,6 +79,7 @@ export default function MapScreen() {
   if (stateFor !== datasetId) {
     setStateFor(datasetId);
     setPointStyle(DEFAULT_POINT_STYLE);
+    setFlowStyle(DEFAULT_FLOW_STYLE);
     setFilterChoice(undefined);
     setFilterMode("one");
     setIsolated(null);
@@ -85,9 +94,8 @@ export default function MapScreen() {
       ),
     [upload]
   );
-  // Columns whose values are on points or flows (not lat/lon, and not the
-  // structural CSV columns that become flow endpoints and weights); unusable
-  // ones stay listed, disabled, with the reason.
+  // Columns whose values are on points or flows (not lat/lon); unusable ones
+  // stay listed, disabled, with the reason.
   const filterOptions = useMemo<FilterColumnOption[]>(
     () =>
       (upload?.columns ?? [])
@@ -123,6 +131,10 @@ export default function MapScreen() {
   const pointStyles = useMemo(
     () => (upload ? computePointStyles(upload.dataset, pointStyle, profiles) : null),
     [upload, pointStyle, profiles]
+  );
+  const flowStyles = useMemo(
+    () => (upload ? computeFlowStyles(upload.dataset, flowStyle, profiles) : null),
+    [upload, flowStyle, profiles]
   );
 
   // Esc shows every flow again.
@@ -218,20 +230,37 @@ export default function MapScreen() {
             <p className="text-[12px] leading-[16px] text-ink-muted">{t("map.columnsHint")}</p>
           </div>
           <ul className="flex w-full flex-col gap-[2px]">
-            {upload.columns.map((column) => (
-              <ColumnItem key={column.name} column={column}>
-                <ColumnStyleControl
-                  column={column.name}
-                  positional={column.kind === "lat" || column.kind === "lon"}
-                  profile={profiles.get(column.name)!}
-                  channel={channelForColumn(pointStyle, column.name)}
-                  onChannelChange={(channel) => setPointStyle((s) => assignChannel(s, column.name, channel))}
-                  colorScale={pointStyle.colorScale}
-                  colorReverse={pointStyle.colorReverse}
-                  onColorOptionsChange={(options) => setPointStyle((s) => ({ ...s, ...options }))}
-                />
-              </ColumnItem>
-            ))}
+            {upload.columns.map((column) => {
+              const profile = profiles.get(column.name)!;
+              // Columns on points style the points; flow-only columns, the flows.
+              const onFlows = !profile.onPoints;
+              const style = onFlows ? flowStyle : pointStyle;
+              return (
+                <ColumnItem key={column.name} column={column}>
+                  <ColumnStyleControl
+                    column={column.name}
+                    positional={column.kind === "lat" || column.kind === "lon"}
+                    profile={profile}
+                    target={onFlows ? "flows" : "points"}
+                    channel={
+                      onFlows
+                        ? channelForColumn(flowStyle, FLOW_CHANNELS, column.name)
+                        : channelForColumn(pointStyle, STYLE_CHANNELS, column.name)
+                    }
+                    onChannelChange={(channel) =>
+                      onFlows
+                        ? setFlowStyle((s) => assignChannel(s, FLOW_CHANNELS, column.name, channel as FlowChannel | null))
+                        : setPointStyle((s) => assignChannel(s, STYLE_CHANNELS, column.name, channel as StyleChannel | null))
+                    }
+                    colorScale={style.colorScale}
+                    colorReverse={style.colorReverse}
+                    onColorOptionsChange={(options) =>
+                      onFlows ? setFlowStyle((s) => ({ ...s, ...options })) : setPointStyle((s) => ({ ...s, ...options }))
+                    }
+                  />
+                </ColumnItem>
+              );
+            })}
           </ul>
         </section>
       </aside>
@@ -246,6 +275,7 @@ export default function MapScreen() {
         <MapView
           dataset={upload.dataset}
           pointStyles={pointStyles}
+          flowStyles={flowStyles}
           filter={filterAxis ? { target: filterAxis.target, stepOf: filterAxis.stepOf, steps: selection } : null}
           bottomInset={FILTER_BAR_SPACE}
           isolated={isolated}
@@ -290,7 +320,7 @@ export default function MapScreen() {
         {/* Legend sits above the filter bar. */}
         <div className="pointer-events-none absolute top-[16px] bottom-[164px] left-[16px] flex items-end">
           <div className="pointer-events-auto max-h-full">
-            <MapLegend key={datasetId} sections={pointStyles?.legend ?? []} />
+            <MapLegend key={datasetId} sections={[...(pointStyles?.legend ?? []), ...(flowStyles?.legend ?? [])]} />
           </div>
         </div>
         <div className="pointer-events-none absolute inset-x-[16px] bottom-[42px]">

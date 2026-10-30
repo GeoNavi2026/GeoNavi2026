@@ -88,6 +88,8 @@ export type Hint =
       key:
         | "noValuesOnPoints"
         | "sunset"
+        | "blues"
+        | "wider"
         | "rainbow"
         | "colorblind"
         | "bigger"

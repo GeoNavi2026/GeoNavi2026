@@ -44,6 +44,12 @@ function items(dataset: DatasetResponse, column: string, target: FilterTarget) {
     : dataset.edges.map((e) => ({ id: e.id, value: edgeValue(e, column), weight: e.weight }));
 }
 
+// Long whole numbers (tract ids, codes) are identifiers, not quantities: they
+// get one step or colour per value, and are shown as written ("12001000201",
+// not "12B").
+const isIdentifier = (n: number) => Number.isInteger(n) && Math.abs(n) >= 1e7;
+export const allIdentifiers = (numbers: number[]) => numbers.length > 0 && numbers.every(isIdentifier);
+
 export interface ValueStats {
   present: boolean;
   numeric: boolean;
@@ -54,15 +60,18 @@ export interface ValueStats {
 export function flowStats(dataset: DatasetResponse, column: string): ValueStats {
   let present = false, numeric = true;
   const unique = new Set<string>();
+  const numbers: number[] = [];
   for (const edge of dataset.edges) {
     const v = edgeValue(edge, column);
     if (v === undefined) continue;
     present = true;
     if (isEmpty(v)) continue;
+    const n = asNumber(v);
+    if (n === null) numeric = false;
+    else if (!unique.has(String(v))) numbers.push(n);
     unique.add(String(v));
-    if (asNumber(v) === null) numeric = false;
   }
-  return { present, numeric: present && unique.size > 0 && numeric, unique: unique.size };
+  return { present, numeric: present && unique.size > 0 && numeric && !allIdentifiers(numbers), unique: unique.size };
 }
 
 export interface FilterAvailability {
@@ -120,7 +129,8 @@ export function buildFilterAxis(
     stepFor = (v) => edgeHour(String(v));
   } else {
     const numbers = rows.map((r) => asNumber(r.value));
-    const numeric = numbers.every((n) => n !== null);
+    // Ids are stepped through one value at a time, like text.
+    const numeric = numbers.every((n) => n !== null) && !allIdentifiers(numbers as number[]);
     const distinct = [...new Set(rows.map((r) => String(r.value)))];
     if (numeric && distinct.length > NUMBER_BINS) {
       let min = Infinity, max = -Infinity;
@@ -137,10 +147,7 @@ export function buildFilterAxis(
         ? distinct.sort((a, b) => Number(a) - Number(b))
         : distinct.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
       const index = new Map(sorted.map((v, i) => [v, i]));
-      // Long whole numbers (tract ids, codes) are identifiers: show them as
-      // written, since compacting would turn every one into "12B".
-      const ids = numeric && (numbers as number[]).every((n) => Number.isInteger(n) && Math.abs(n) >= 1e7);
-      labels = sorted.map((v): AxisLabel => (numeric && !ids ? { kind: "value", value: Number(v) } : { kind: "text", text: v }));
+      labels = sorted.map((v): AxisLabel => (numeric ? { kind: "value", value: Number(v) } : { kind: "text", text: v }));
       ticks = spreadTicks(labels);
       stepFor = (v) => index.get(String(v)) ?? null;
     }

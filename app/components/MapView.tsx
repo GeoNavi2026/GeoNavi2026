@@ -20,8 +20,8 @@ import {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useI18n } from "@/lib/i18n";
-import { DEFAULT_POINT_COLOR, RADIUS, type PointStyles } from "@/lib/point-style";
-import { ICON_UNIT_RADIUS_CSS, SHAPES, shapeImageName, shapeSdf } from "@/lib/shapes";
+import { DEFAULT_POINT_COLOR, FLOW_WIDTH, RADIUS, type FlowStyles, type PointStyles } from "@/lib/point-style";
+import { ARROW_IMAGE, arrowSdf, ICON_UNIT_RADIUS_CSS, SHAPES, shapeImageName, shapeSdf } from "@/lib/shapes";
 import type { FilterTarget } from "@/lib/filter-axis";
 import { toGeoJson } from "@/lib/to-geojson";
 import type { DatasetResponse } from "@/lib/types";
@@ -48,15 +48,23 @@ const OSM_STYLE: StyleSpecification = {
 
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
-// Line width in pixels, scaled by weight relative to the dataset's max.
-const EDGE_WIDTH: ExpressionSpecification = [
-  "interpolate", ["linear"], ["get", "norm"],
-  0, 2,
-  1, 10,
+// Flow width in px (set per flow, see edgeWidth) and colour: a Color column's
+// colour, else light to dark blue by weight relative to the dataset's max.
+const EDGE_WIDTH: ExpressionSpecification = ["get", "width"];
+const EDGE_COLOR: ExpressionSpecification = [
+  "coalesce", ["get", "color"],
+  ["interpolate", ["linear"], ["get", "norm"], 0, "#60a5fa", 1, "#1d4ed8"],
 ];
 // Offset each line to the right of its direction, so A→B and B→A sit side by
 // side with a 4px gap instead of on top of each other.
+const edgeOffset = (width: number) => width / 2 + 2;
 const EDGE_OFFSET: ExpressionSpecification = ["+", ["/", EDGE_WIDTH, 2], 2];
+// Arrowhead half-length in px for a flow of the given width.
+const arrowRadius = (width: number) => width * 0.9 + 5;
+// Arrows are drawn only while at most this many flows are shown: past it they
+// are clutter, and MapLibre fails outright on ~65k icons in one tile (which a
+// zoomed-out map of a big dataset reaches). Filtering or isolating brings them back.
+const MAX_ARROWS = 10_000;
 
 // Node name pills are DOM markers; past this many they would slow the map down.
 const MAX_LABELS = 200;
@@ -81,6 +89,8 @@ type MapViewProps = {
   bottomInset?: number;
   /** Column-driven point colours, sizes and shapes; null or empty keeps the default look. */
   pointStyles?: PointStyles | null;
+  /** Column-driven flow colours and widths; null or empty keeps the default look. */
+  flowStyles?: FlowStyles | null;
   /**
    * Isolated points: only flows starting or ending at one of these are shown,
    * and points not connected to them are faded. Null shows every flow.
@@ -110,6 +120,7 @@ export type PointFlowFilter = { target: FilterTarget; stepOf: Map<string, number
 export default function MapView({
   dataset,
   pointStyles = null,
+  flowStyles = null,
   filter = null,
   bottomInset = FIT_PADDING.bottom,
   isolated = null,
@@ -152,14 +163,33 @@ export default function MapView({
         source: "edges",
         layout: { "line-cap": "round" },
         paint: {
-          "line-color": [
-            "interpolate", ["linear"], ["get", "norm"],
-            0, "#60a5fa",
-            1, "#1d4ed8",
-          ],
+          "line-color": EDGE_COLOR,
           "line-width": EDGE_WIDTH,
           "line-offset": EDGE_OFFSET,
           "line-opacity": 0.85,
+        },
+      });
+
+      // An arrowhead halfway along each flow, pointing the way it goes. Icon
+      // offsets are in icon units, so the line's offset is converted per flow.
+      map.addImage(ARROW_IMAGE, arrowSdf(), { sdf: true, pixelRatio: 2 });
+      map.addLayer({
+        id: "edge-arrows",
+        type: "symbol",
+        source: "edges",
+        layout: {
+          "symbol-placement": "line-center",
+          "icon-image": ARROW_IMAGE,
+          "icon-size": ["get", "arrowSize"],
+          "icon-offset": ["get", "arrowOffset"],
+          "icon-rotation-alignment": "map",
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+        },
+        paint: {
+          "icon-color": EDGE_COLOR,
+          "icon-halo-color": "#ffffff",
+          "icon-halo-width": 1,
         },
       });
 
@@ -315,18 +345,29 @@ export default function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataset, ready]);
 
-  // Flows, tagged with their filter step when the filter is on a flow column.
+  // Flows, with their column-driven styles and arrowhead placement, tagged
+  // with their filter step when the filter is on a flow column.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     const edges = dataset ? toGeoJson(dataset).edges : EMPTY;
-    if (flowSteps) {
-      for (const feature of edges.features) {
-        Object.assign(feature.properties!, { step: flowSteps.get(String(feature.properties?.id)) ?? -1 });
-      }
+    for (const feature of edges.features) {
+      const props = feature.properties!;
+      const id = String(props.id);
+      const style = flowStyles?.byEdge.get(id);
+      // Without a Width column, width scales with weight.
+      const width = style?.width ?? FLOW_WIDTH.min + (FLOW_WIDTH.max - FLOW_WIDTH.min) * Number(props.norm);
+      const arrowSize = arrowRadius(width) / ICON_UNIT_RADIUS_CSS;
+      Object.assign(props, {
+        width,
+        color: style?.color,
+        arrowSize,
+        arrowOffset: [0, edgeOffset(width) / arrowSize],
+      });
+      if (flowSteps) Object.assign(props, { step: flowSteps.get(id) ?? -1 });
     }
     map.getSource<GeoJSONSource>("edges")?.setData(edges);
-  }, [dataset, flowSteps, ready]);
+  }, [dataset, flowStyles, flowSteps, ready]);
 
   // Points, with their column-driven styles.
   useEffect(() => {
@@ -383,8 +424,15 @@ export default function MapView({
       flowTests.push(["any", ["in", ["get", "source"], ids], ["in", ["get", "target"], ids]]);
     }
     const flowFilter: FilterSpecification | null = flowTests.length ? ["all", ...flowTests] : null;
-    map.setFilter("edges", flowFilter);
-    map.setFilter("edges-hit", flowFilter);
+    let shownFlows = 0;
+    const isolatedIds = new Set(isolated ?? []);
+    for (const edge of dataset?.edges ?? []) {
+      if (flowSteps && steps !== null && !selected.has(flowSteps.get(edge.id) ?? -1)) continue;
+      if (isolated && !isolatedIds.has(edge.source) && !isolatedIds.has(edge.target)) continue;
+      shownFlows++;
+    }
+    map.setLayoutProperty("edge-arrows", "visibility", shownFlows <= MAX_ARROWS ? "visible" : "none");
+    for (const layer of ["edges", "edge-arrows", "edges-hit"]) map.setFilter(layer, flowFilter);
 
     const pointTests: ExpressionSpecification[] = [];
     if (pointSteps) pointTests.push(atStep);
@@ -403,10 +451,10 @@ export default function MapView({
       el.style.zIndex = faded ? "0" : "1";
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `steps`/`isolated` are tracked by their keys
-  }, [stepsKey, flowSteps, pointSteps, isolatedKey, connected, ready]);
+  }, [dataset, stepsKey, flowSteps, pointSteps, isolatedKey, connected, ready]);
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative isolate h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
 
       <div className="absolute top-[16px] right-[16px] flex flex-col overflow-hidden rounded-[6px] bg-surface shadow-[0px_2px_10px_0px_rgba(0,0,0,0.3)]">
