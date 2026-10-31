@@ -1,0 +1,22 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="1400" height="1400" viewBox="0 0 1400 1400" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Sphere" filter="url(#filter0_d_0_76)">
+<circle cx="700" cy="700" r="560" fill="url(#paint0_radial_0_76)"/>
+<circle cx="700" cy="700" r="559.25" stroke="#3B82F5" stroke-opacity="0.55" stroke-width="1.5"/>
+</g>
+<defs>
+<filter id="filter0_d_0_76" x="0" y="0" width="1400" height="1400" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="BackgroundImageFix"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+<feOffset/>
+<feGaussianBlur stdDeviation="70"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.15 0 0 0 0 0.39 0 0 0 0 0.92 0 0 0 0.35 0"/>
+<feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_0_76"/>
+<feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_0_76" result="shape"/>
+</filter>
+<radialGradient id="paint0_radial_0_76" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(700 700) scale(560)">
+<stop stop-color="#17295C"/>
+<stop offset="0.65" stop-color="#0A122B"/>
+<stop offset="1" stop-color="#050812"/>
+</radialGradient>
+</defs>
+</svg>

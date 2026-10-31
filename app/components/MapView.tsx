@@ -1,21 +1,27 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- static SVG icons exported from Figma */
 
-// OpenStreetMap base map with the selected dataset drawn on top.
-// Browser-only: load it through next/dynamic with ssr: false.
+// OpenStreetMap base map with the selected dataset drawn on top, styled to
+// the Figma "Map view". Browser-only: load it through next/dynamic with ssr: false.
 
 import { useEffect, useRef, useState } from "react";
 import type { FeatureCollection } from "geojson";
 import {
   Map as MapLibreMap,
-  NavigationControl,
+  Marker,
   Popup,
   setWorkerUrl,
   type ExpressionSpecification,
+  type FilterSpecification,
   type GeoJSONSource,
   type MapLayerMouseEvent,
   type StyleSpecification,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { useI18n } from "@/lib/i18n";
+import { DEFAULT_POINT_COLOR, RADIUS, type PointStyles } from "@/lib/point-style";
+import { ICON_UNIT_RADIUS_CSS, SHAPES, shapeImageName, shapeSdf } from "@/lib/shapes";
+import type { TimeTarget } from "@/lib/time-axis";
 import { toGeoJson } from "@/lib/to-geojson";
 import type { DatasetResponse } from "@/lib/types";
 
@@ -25,6 +31,7 @@ setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
 // OSM's public tiles are fine for development but have a strict usage policy:
 // https://operations.osmfoundation.org/policies/tiles/
 // Swap in a dedicated tile provider before any real traffic.
+// Attribution is rendered by the pill in the bottom-right corner.
 const OSM_STYLE: StyleSpecification = {
   version: 8,
   sources: {
@@ -33,8 +40,6 @@ const OSM_STYLE: StyleSpecification = {
       tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
       tileSize: 256,
       maxzoom: 19,
-      attribution:
-        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     },
   },
   layers: [{ id: "osm", type: "raster", source: "osm" }],
@@ -48,15 +53,54 @@ const EDGE_WIDTH: ExpressionSpecification = [
   0, 2,
   1, 10,
 ];
+// Offset each line to the right of its direction, so A→B and B→A sit side by
+// side with a 4px gap instead of on top of each other.
+const EDGE_OFFSET: ExpressionSpecification = ["+", ["/", EDGE_WIDTH, 2], 2];
+
+// Node name pills are DOM markers; past this many they would slow the map down.
+const MAX_LABELS = 200;
+
+// The Figma "Map view" keeps 80px around the data. Uploaded bounding boxes hug
+// the outermost nodes, so also leave room for name pills on the right and, when
+// shown, for the time slider (98px tall, 42px from the bottom).
+const FIT_PADDING = { top: 80, right: 160, bottom: 80, left: 80 };
+const TIME_SLIDER_PADDING = 200;
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-export default function MapView({ dataset }: { dataset: DatasetResponse | null }) {
+type MapViewProps = {
+  dataset: DatasetResponse | null;
+  /**
+   * The Time style: show only the points or flows at `step` of the time
+   * slider (`stepOf` maps their ids to steps). Null shows everything.
+   */
+  timeFilter?: TimeFilter | null;
+  /** Column-driven point colours, sizes and shapes; null or empty keeps the default look. */
+  pointStyles?: PointStyles | null;
+};
+
+// Points are SDF shape icons so colour, size, shape and outline can vary per point.
+const NODE_RADIUS: ExpressionSpecification = ["coalesce", ["get", "radius"], RADIUS.default];
+// Distance from a point's centre to its name pill.
+const labelOffset = (radius: number): [number, number] => [radius + 6, 0];
+
+export type TimeFilter = { target: TimeTarget; stepOf: Map<string, number>; step: number };
+
+export default function MapView({ dataset, pointStyles = null, timeFilter = null }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const labelsRef = useRef<Map<string, Marker>>(new Map());
+  const i18n = useI18n();
+  const i18nRef = useRef(i18n); // for click handlers
+  useEffect(() => {
+    i18nRef.current = i18n;
+  }, [i18n]);
   const [ready, setReady] = useState(false);
+  const hasTimeSlider = timeFilter !== null;
+  const pointSteps = timeFilter?.target === "points" ? timeFilter.stepOf : null;
+  const flowSteps = timeFilter?.target === "flows" ? timeFilter.stepOf : null;
 
   // Create the map once.
   useEffect(() => {
@@ -67,9 +111,9 @@ export default function MapView({ dataset }: { dataset: DatasetResponse | null }
       style: OSM_STYLE,
       center: [-82.35, 29.65],
       zoom: 11,
+      attributionControl: false,
     });
     mapRef.current = map;
-    map.addControl(new NavigationControl(), "top-right");
 
     map.on("load", () => {
       map.addSource("edges", { type: "geojson", data: EMPTY });
@@ -87,9 +131,7 @@ export default function MapView({ dataset }: { dataset: DatasetResponse | null }
             1, "#1d4ed8",
           ],
           "line-width": EDGE_WIDTH,
-          // Offset each line to the right of its direction, so A→B and B→A
-          // sit side by side instead of on top of each other.
-          "line-offset": ["/", EDGE_WIDTH, 2],
+          "line-offset": EDGE_OFFSET,
           "line-opacity": 0.85,
         },
       });
@@ -101,33 +143,46 @@ export default function MapView({ dataset }: { dataset: DatasetResponse | null }
         source: "edges",
         paint: {
           "line-width": ["+", EDGE_WIDTH, 10],
-          "line-offset": ["/", EDGE_WIDTH, 2],
+          "line-offset": EDGE_OFFSET,
           "line-opacity": 0,
         },
       });
 
+      for (const shape of SHAPES) {
+        map.addImage(shapeImageName(shape), shapeSdf(shape), { sdf: true, pixelRatio: 2 });
+      }
       map.addLayer({
         id: "nodes",
-        type: "circle",
+        type: "symbol",
         source: "nodes",
+        layout: {
+          "icon-image": ["coalesce", ["get", "icon"], shapeImageName("circle")],
+          "icon-size": ["/", NODE_RADIUS, ICON_UNIT_RADIUS_CSS],
+          "icon-allow-overlap": true,
+          "icon-ignore-placement": true,
+          // Big points first, so small ones stay visible on top.
+          "symbol-sort-key": ["-", 0, NODE_RADIUS],
+        },
         paint: {
-          "circle-radius": 7,
-          "circle-color": "#f97316",
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 2,
+          "icon-color": ["coalesce", ["get", "color"], DEFAULT_POINT_COLOR],
+          "icon-halo-color": "#ffffff",
+          "icon-halo-width": 2.5,
         },
       });
 
-      const popup = (e: MapLayerMouseEvent, html: string) =>
-        new Popup({ closeButton: false })
+      const popup = (e: MapLayerMouseEvent, title: string, body: string) =>
+        new Popup({ closeButton: false, className: "gn-popup", offset: 8, maxWidth: "none" })
           .setLngLat(e.lngLat)
-          .setHTML(html)
+          .setHTML(
+            `<div class="gn-popup-title">${escapeHtml(title)}</div>` +
+              `<div class="gn-popup-body">${escapeHtml(body)}</div>`
+          )
           .addTo(map);
 
       map.on("click", "nodes", (e: MapLayerMouseEvent) => {
         const p = e.features?.[0]?.properties;
         if (!p) return;
-        popup(e, `<strong>${escapeHtml(String(p.name))}</strong><br/>${escapeHtml(String(p.id))}`);
+        popup(e, String(p.name), String(p.id));
       });
 
       map.on("click", "edges-hit", (e: MapLayerMouseEvent) => {
@@ -135,11 +190,8 @@ export default function MapView({ dataset }: { dataset: DatasetResponse | null }
         if (map.queryRenderedFeatures(e.point, { layers: ["nodes"] }).length) return;
         const p = e.features?.[0]?.properties;
         if (!p) return;
-        popup(
-          e,
-          `<strong>${escapeHtml(String(p.sourceName))} → ${escapeHtml(String(p.targetName))}</strong>` +
-            `<br/>Weight: ${Number(p.weight).toLocaleString()}`
-        );
+        const { t, formatNumber } = i18nRef.current;
+        popup(e, `${p.sourceName} → ${p.targetName}`, `${t("map.weight")}: ${formatNumber(Number(p.weight))}`);
       });
 
       for (const layer of ["nodes", "edges-hit"]) {
@@ -162,9 +214,19 @@ export default function MapView({ dataset }: { dataset: DatasetResponse | null }
     const map = mapRef.current;
     if (!map || !ready) return;
 
-    const { nodes, edges } = dataset ? toGeoJson(dataset) : { nodes: EMPTY, edges: EMPTY };
-    map.getSource<GeoJSONSource>("nodes")?.setData(nodes);
-    map.getSource<GeoJSONSource>("edges")?.setData(edges);
+    for (const marker of labelsRef.current.values()) marker.remove();
+    labelsRef.current = new Map();
+    if (dataset && dataset.nodes.length <= MAX_LABELS) {
+      for (const node of dataset.nodes) {
+        const el = document.createElement("div");
+        el.className = "gn-node-label";
+        el.textContent = node.name ?? node.id;
+        const marker = new Marker({ element: el, anchor: "left", offset: labelOffset(RADIUS.default) })
+          .setLngLat(node.coords)
+          .addTo(map);
+        labelsRef.current.set(node.id, marker);
+      }
+    }
 
     if (dataset) {
       const [minLon, minLat, maxLon, maxLat] = dataset.meta.bbox;
@@ -173,10 +235,106 @@ export default function MapView({ dataset }: { dataset: DatasetResponse | null }
           [minLon, minLat],
           [maxLon, maxLat],
         ],
-        { padding: 40, duration: 600 }
+        {
+          padding: { ...FIT_PADDING, bottom: hasTimeSlider ? TIME_SLIDER_PADDING : FIT_PADDING.bottom },
+          duration: 600,
+          maxZoom: 15,
+        }
       );
     }
+    // Refit only when the data changes, not when the time slider appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataset, ready]);
 
-  return <div ref={containerRef} className="h-full w-full" />;
+  // Flows, tagged with their time step when the Time style is on a flow column.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const edges = dataset ? toGeoJson(dataset).edges : EMPTY;
+    if (flowSteps) {
+      for (const feature of edges.features) {
+        Object.assign(feature.properties!, { step: flowSteps.get(String(feature.properties?.id)) ?? -1 });
+      }
+    }
+    map.getSource<GeoJSONSource>("edges")?.setData(edges);
+  }, [dataset, flowSteps, ready]);
+
+  // Points, with their column-driven styles.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const nodes = dataset ? toGeoJson(dataset).nodes : EMPTY;
+    for (const feature of nodes.features) {
+      const id = String(feature.properties?.id);
+      const style = pointStyles?.byNode.get(id);
+      labelsRef.current.get(id)?.setOffset(labelOffset(style?.radius ?? RADIUS.default));
+      if (pointSteps) Object.assign(feature.properties!, { step: pointSteps.get(id) ?? -1 });
+      if (!style) continue;
+      Object.assign(feature.properties!, {
+        color: style.color,
+        radius: style.radius,
+        icon: style.shape ? shapeImageName(style.shape) : undefined,
+      });
+    }
+    map.getSource<GeoJSONSource>("nodes")?.setData(nodes);
+    // Styled points get the Figma's dark outline so pale colours stay visible.
+    const styled = pointStyles?.active ?? false;
+    map.setPaintProperty("nodes", "icon-halo-color", styled ? "rgba(24, 24, 27, 0.85)" : "#ffffff");
+    map.setPaintProperty("nodes", "icon-halo-width", styled ? 1.5 : 2.5);
+  }, [dataset, pointStyles, pointSteps, ready]);
+
+  // Time filter: only the points or flows at the slider's current step.
+  const step = timeFilter?.step ?? null;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const atStep: FilterSpecification | null = step === null ? null : ["==", ["get", "step"], step];
+    map.setFilter("edges", flowSteps ? atStep : null);
+    map.setFilter("edges-hit", flowSteps ? atStep : null);
+    map.setFilter("nodes", pointSteps ? atStep : null);
+    for (const [id, marker] of labelsRef.current) {
+      marker.getElement().style.display = !pointSteps || pointSteps.get(id) === step ? "" : "none";
+    }
+  }, [step, flowSteps, pointSteps, ready]);
+
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} className="h-full w-full" />
+
+      <div className="absolute top-[16px] right-[16px] flex flex-col overflow-hidden rounded-[6px] bg-surface shadow-[0px_2px_10px_0px_rgba(0,0,0,0.3)]">
+        <button
+          type="button"
+          aria-label={i18n.t("map.zoomIn")}
+          onClick={() => mapRef.current?.zoomIn()}
+          className="flex size-[34px] cursor-pointer items-center justify-center border-b border-line hover:bg-line"
+        >
+          <img src="/figma/icon-plus.svg" width={16} height={16} alt="" />
+        </button>
+        <button
+          type="button"
+          aria-label={i18n.t("map.zoomOut")}
+          onClick={() => mapRef.current?.zoomOut()}
+          className="flex size-[34px] cursor-pointer items-center justify-center hover:bg-line"
+        >
+          <img src="/figma/icon-minus.svg" width={16} height={16} alt="" />
+        </button>
+      </div>
+
+      <p className="absolute right-[10px] bottom-[10px] rounded-full bg-surface px-[8px] py-[3px] text-[11px] leading-[16px] whitespace-nowrap text-ink">
+        <a href="https://maplibre.org" target="_blank" rel="noopener noreferrer" className="hover:underline">
+          MapLibre
+        </a>{" "}
+        | ©{" "}
+        <a
+          href="https://www.openstreetmap.org/copyright"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:underline"
+        >
+          OpenStreetMap
+        </a>{" "}
+        {i18n.t("map.contributors")}
+      </p>
+    </div>
+  );
 }

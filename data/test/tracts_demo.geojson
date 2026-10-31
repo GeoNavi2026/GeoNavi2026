@@ -1,0 +1,233 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.32487,
+     29.65161
+    ]
+   },
+   "properties": {
+    "tract_id": "12001000201",
+    "name": "Downtown",
+    "population": 4800,
+    "median_income": 52000,
+    "land_use": "commercial",
+    "lat": 29.65161,
+    "lon": -82.32487
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.35104,
+     29.64195
+    ]
+   },
+   "properties": {
+    "tract_id": "12001000400",
+    "name": "Campus",
+    "population": 9600,
+    "median_income": 18000,
+    "land_use": "campus",
+    "lat": 29.64195,
+    "lon": -82.35104
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.41017,
+     29.6789
+    ]
+   },
+   "properties": {
+    "tract_id": "12001000300",
+    "name": "Northwest",
+    "population": 3900,
+    "median_income": 88000,
+    "land_use": "residential",
+    "lat": 29.6789,
+    "lon": -82.41017
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.36994,
+     29.61998
+    ]
+   },
+   "properties": {
+    "tract_id": "12001000500",
+    "name": "South",
+    "population": 3100,
+    "median_income": 41000,
+    "land_use": "residential",
+    "lat": 29.61998,
+    "lon": -82.36994
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.31465,
+     29.66093
+    ]
+   },
+   "properties": {
+    "tract_id": "12001000600",
+    "name": "Duckpond",
+    "population": 2400,
+    "median_income": 64000,
+    "land_use": "residential",
+    "lat": 29.66093,
+    "lon": -82.31465
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.3393,
+     29.6495
+    ]
+   },
+   "properties": {
+    "tract_id": "12001000700",
+    "name": "Midtown",
+    "population": 5200,
+    "median_income": 26000,
+    "land_use": "mixed",
+    "lat": 29.6495,
+    "lon": -82.3393
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.38961,
+     29.63918
+    ]
+   },
+   "properties": {
+    "tract_id": "12001000800",
+    "name": "Butler",
+    "population": 2800,
+    "median_income": 71000,
+    "land_use": "commercial",
+    "lat": 29.63918,
+    "lon": -82.38961
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.40008,
+     29.65449
+    ]
+   },
+   "properties": {
+    "tract_id": "12001000900",
+    "name": "Haile",
+    "population": 3600,
+    "median_income": 96000,
+    "land_use": "residential",
+    "lat": 29.65449,
+    "lon": -82.40008
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.30252,
+     29.64229
+    ]
+   },
+   "properties": {
+    "tract_id": "12001001000",
+    "name": "Eastside",
+    "population": 4100,
+    "median_income": 33000,
+    "land_use": "mixed",
+    "lat": 29.64229,
+    "lon": -82.30252
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.30763,
+     29.68001
+    ]
+   },
+   "properties": {
+    "tract_id": "12001001100",
+    "name": "Airport",
+    "population": 1200,
+    "median_income": 45000,
+    "land_use": "commercial",
+    "lat": 29.68001,
+    "lon": -82.30763
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.38041,
+     29.62897
+    ]
+   },
+   "properties": {
+    "tract_id": "12001001200",
+    "name": "Archer",
+    "population": 4500,
+    "median_income": 58000,
+    "land_use": "residential",
+    "lat": 29.62897,
+    "lon": -82.38041
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -82.37531,
+     29.67091
+    ]
+   },
+   "properties": {
+    "tract_id": "12001001300",
+    "name": "Millhopper",
+    "population": 3300,
+    "median_income": 79000,
+    "land_use": "residential",
+    "lat": 29.67091,
+    "lon": -82.37531
+   }
+  }
+ ]
+}

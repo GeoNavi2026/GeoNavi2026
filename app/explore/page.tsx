@@ -1,5 +1,5 @@
-import Explorer from "../components/Explorer";
+import MapScreen from "../components/MapScreen";
 
 export default function ExplorePage() {
-  return <Explorer />;
+  return <MapScreen />;
 }
