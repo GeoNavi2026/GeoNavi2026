@@ -71,6 +71,14 @@ export function formatAxisLabel(label: AxisLabel, lang: Lang) {
   }
 }
 
+/** A run of neighbouring steps, e.g. "8:00 AM – 11:00 AM" or "18K – 30K". */
+export function formatAxisSpan(first: AxisLabel, last: AxisLabel, lang: Lang) {
+  if (first.kind === "range" && last.kind === "range") {
+    return `${formatValue(first.from, lang)} – ${formatValue(last.to, lang)}`;
+  }
+  return `${formatAxisLabel(first, lang)} – ${formatAxisLabel(last, lang)}`;
+}
+
 /**
  * Menu hint from lib/ code, as a message key plus raw count. The UI turns it
  * into text with i18n's `hint()`, formatting `n` for the selected language.
@@ -78,9 +86,10 @@ export function formatAxisLabel(label: AxisLabel, lang: Lang) {
 export type Hint =
   | {
       key:
-        | "pointsOnly"
         | "noValuesOnPoints"
         | "sunset"
+        | "blues"
+        | "wider"
         | "rainbow"
         | "colorblind"
         | "bigger"

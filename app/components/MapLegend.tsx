@@ -2,15 +2,30 @@
 /* eslint-disable @next/next/no-img-element -- static SVG icon exported from Figma */
 
 // Figma "Legend" (page "3 · Customization"): one collapsible section per
-// active style channel.
+// active style channel, points first, then flows.
 
 import { useState } from "react";
-import { SUNSET, type LegendSection } from "@/lib/point-style";
+import type { LegendSection } from "@/lib/point-style";
 import { useI18n } from "@/lib/i18n";
 import { shapePoints } from "@/lib/shapes";
-import StyleIcon from "./StyleIcon";
+import StyleIcon, { type StyleIconKind } from "./StyleIcon";
 
-const TITLES = { color: "style.color", size: "style.size", shape: "style.shape" } as const;
+const TITLES = {
+  points: { color: "style.color", size: "style.size", shape: "style.shape" },
+  flows: { color: "style.flowColor", width: "style.flowWidth" },
+} as const;
+
+function iconFor(section: LegendSection): StyleIconKind {
+  if (section.channel !== "color") return section.channel;
+  if (section.kind === "categories") return "rainbow";
+  return section.target === "flows" ? "flowColor" : "color";
+}
+
+function titleFor(section: LegendSection) {
+  return section.target === "flows"
+    ? TITLES.flows[section.channel as "color" | "width"]
+    : TITLES.points[section.channel as "color" | "size" | "shape"];
+}
 
 export default function MapLegend({ sections }: { sections: LegendSection[] }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -31,10 +46,9 @@ export default function MapLegend({ sections }: { sections: LegendSection[] }) {
       className="flex max-h-full w-[212px] flex-col gap-[14px] overflow-y-auto rounded-[12px] scheme-dark border border-line bg-surface/94 px-[14px] py-[12px] shadow-[0px_4px_16px_0px_rgba(0,0,0,0.3)]"
     >
       {sections.map((section) => {
-        const key = `${section.channel}:${section.column}`;
+        const key = `${section.target}:${section.channel}:${section.column}`;
         const open = !collapsed.has(key);
-        const bodyId = `legend-${section.channel}`;
-        const icon = section.channel === "color" ? (section.kind === "ramp" ? "color" : "rainbow") : section.channel;
+        const bodyId = `legend-${section.target}-${section.channel}`;
         return (
           <div key={key} className="flex flex-col gap-[8px]">
             <button
@@ -44,8 +58,8 @@ export default function MapLegend({ sections }: { sections: LegendSection[] }) {
               aria-controls={bodyId}
               className="flex w-full cursor-pointer items-center gap-[6px] rounded-[4px] text-left outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent-text"
             >
-              <StyleIcon kind={icon} />
-              <span className="text-[11px] leading-[16px] font-semibold text-ink">{t(TITLES[section.channel])}</span>
+              <StyleIcon kind={iconFor(section)} />
+              <span className="text-[11px] leading-[16px] font-semibold whitespace-nowrap text-ink">{t(titleFor(section))}</span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-[16px] text-ink-muted">{section.column}</span>
               <img
                 src="/figma/icon-chevron-down.svg"
@@ -70,7 +84,7 @@ export default function MapLegend({ sections }: { sections: LegendSection[] }) {
 function LegendBody({ section }: { section: LegendSection }) {
   const { formatValue } = useI18n();
   if (section.channel === "color" && section.kind === "ramp") {
-    const stops = section.reverse ? [...SUNSET].reverse() : SUNSET;
+    const { stops } = section;
     return (
       <div className="flex flex-col gap-[8px]">
         <div className="h-[8px] w-full rounded-[4px]" style={{ background: `linear-gradient(90deg, ${stops.join(", ")})` }} />
@@ -88,6 +102,20 @@ function LegendBody({ section }: { section: LegendSection }) {
           <li key={item.label} className="flex items-center gap-[6px] text-[11px] leading-[14px] text-ink-muted">
             <span className="size-[10px] shrink-0 rounded-full" style={{ background: item.color }} />
             <span className="truncate">{item.label}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if (section.channel === "width") {
+    return (
+      <ul className="flex flex-col gap-[6px]">
+        {section.items.map((item) => (
+          <li key={item.value} className="flex items-center gap-[8px] text-[11px] leading-[14px] text-ink-muted">
+            <span className="flex h-[12px] w-[36px] shrink-0 items-center">
+              <span className="w-full rounded-full bg-ink" style={{ height: item.width }} />
+            </span>
+            <span>{formatValue(item.value)}</span>
           </li>
         ))}
       </ul>
