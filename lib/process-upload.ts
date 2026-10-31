@@ -543,13 +543,14 @@ export async function processUpload(file: File): Promise<UploadResult> {
           target: destination,
           weight,
           t: timeColumn ? String(row[timeColumn] ?? "").trim() || undefined : undefined,
+          // Every column but the coordinates stays on the flow, so endpoint and
+          // weight columns (Otract, EST, …) can drive the filter bar and styles.
           properties: scalarProperties(
             Object.fromEntries(
               Object.entries(row).filter(([key]) =>
                 ![
-                  "Otract", "Dtract", "EST", "O_lat", "O_lon", "D_lat", "D_lon",
-                  "origin", "destination", "weight", "originLatitude", "originLongitude",
-                  "destinationLatitude", "destinationLongitude",
+                  "O_lat", "O_lon", "D_lat", "D_lon",
+                  "originLatitude", "originLongitude", "destinationLatitude", "destinationLongitude",
                 ].includes(key)
               )
             )
