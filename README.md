@@ -13,8 +13,9 @@ The project was built for the University of Florida Senior Design course (CIS 49
 - **Upload a file and see it on a map.** Drag and drop a file, or use "Browse files." Points appear as dots and flows appear as lines. Thicker lines mean bigger flows.
 - **Many file formats.** CSV, JSON, GeoJSON, GeoParquet, KML, GPX, and zipped shapefiles. See [Supported formats](#supported-formats).
 - **Your data stays on your computer.** Files are processed in the browser with DuckDB WASM. Nothing is uploaded to a server.
-- **Column styling.** Each column in the sidebar has a Style menu. A column can drive the color, size, or shape of the points. A legend explains the styles.
-- **Time slider.** Assign a column to Time and the slider steps through its values (hours of the day, numbers, or categories), showing only the points or flows for that step. Press play to animate it.
+- **Column styling.** Each column in the sidebar has a Style menu. A column can drive the color, size, or shape of the points, or the color and width of the flows. Flows show arrows for their direction. A legend explains the styles.
+- **Filter bar.** The bar at the bottom of the map steps through the values of any column you pick (hours of the day, number ranges, or categories) and shows only the matching points or flows. It starts on a time column when the data has one. Use **One** to pick a single value or **Many** to select a range, and press play to animate it.
+- **English and Portuguese.** Switch the interface language with the EN / PT button in the top-right corner.
 - **Swap data without leaving the map.** Use "New upload" or drop a new file anywhere on the map.
 - **Sample dataset.** "Try the sample dataset" on the upload screen loads example data, so you can try the app without a file.
 
@@ -22,7 +23,7 @@ The project was built for the University of Florida Senior Design course (CIS 49
 
 | Format | Extension | Notes |
 | --- | --- | --- |
-| Flow CSV | `.csv` | Needs these columns: `Otract`, `Dtract`, `EST`, `O_lat`, `O_lon`, `D_lat`, `D_lon` (origin, destination, flow size, and coordinates). A column named `time`, `hour`, or `timestamp` is used for the time slider. |
+| Flow CSV | `.csv` | Needs latitude and longitude columns for the origin and destination. Names are detected in English or Portuguese, for example `O_lat`, `origin_lat`, or `latitude_origem`. Origin/destination id columns (`Otract`, `origem`, `zona_destino`, …) and a flow size column (`EST`, `weight`, `trips`, `viagens`, …) are optional. Commas or semicolons as separators, and decimal points or decimal commas (`-23,55`), both work. A column named `time`, `hour`, or `hora` starts the filter bar on the hours of the day. |
 | GeoNavi JSON | `.json` | Our own format with `nodes` and `edges`. See [docs/data-contract.md](docs/data-contract.md). |
 | GeoJSON | `.geojson`, `.json` | Point and LineString features. Lines can have `source`, `target`, and `weight` properties. |
 | GeoParquet | `.parquet`, `.geoparquet` | WKB geometry in WGS 84 (latitude and longitude). |
@@ -42,7 +43,8 @@ Test files are in [`data/test/`](data/test/):
 | File | What it contains |
 | --- | --- |
 | `flow_demo.json`, `flow_demo.geojson`, `flow_demo.parquet` | A few Gainesville tracts and the flows between them, in three formats |
-| `flows_hourly.csv` | Flows with a `time` column, for trying the time slider |
+| `flows_hourly.csv` | Flows with a `time` column, for trying the filter bar |
+| `sao_paulo_viagens.csv` | Fictional commute flows between São Paulo districts, in Brazilian format (semicolons, decimal commas, Portuguese column names) |
 | `tracts_demo.geojson` | Points only (no flows), with population, income, and land use columns for trying the styling |
 
 ## Run it locally
@@ -77,11 +79,13 @@ Other commands:
 | Path | Contents |
 | --- | --- |
 | `app/` | Pages: upload screen (`/`), map (`/explore`), and dataset catalog (`/catalog`) |
-| `app/components/` | Interface components (map, sidebar, legend, time slider) |
+| `app/components/` | Interface components (map, sidebar, legend, filter bar, language switch) |
 | `app/api/datasets/` | API that lists and serves datasets stored in `data/datasets/` |
 | `lib/process-upload.ts` | Reads every upload format and converts it to nodes and edges |
+| `lib/csv-columns.ts` | Finds the flow columns in a CSV (English or Portuguese names) and reads numbers in either format |
 | `lib/types.ts` | Data contract shared by the parser, API, and map |
-| `lib/point-style.ts`, `lib/time-axis.ts` | Column styling and time slider logic |
+| `lib/point-style.ts`, `lib/filter-axis.ts` | Column styling and filter bar logic |
+| `lib/i18n.tsx` | English and Portuguese interface text |
 | `docs/data-contract.md` | Data format documentation |
 | `data/test/` | Sample files |
 
@@ -94,7 +98,7 @@ Other commands:
 
 ## Known limitations
 
-- The interface is only in English for now. Portuguese is in progress.
+- Column names from uploaded files are shown as they are, not translated.
 - Polygon data is not supported.
 - Uploaded data is not saved. Reloading the page clears it.
 

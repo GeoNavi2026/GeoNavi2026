@@ -36,7 +36,15 @@ const PT_MESSAGES: [RegExp, (...groups: string[]) => string][] = [
     /^Unsupported file type\./,
     () => "Tipo de arquivo não suportado. Escolha CSV, JSON, GeoJSON, GeoParquet, KML, GPX ou um shapefile em .zip.",
   ],
-  [/^CSV is missing required flow columns: (.+)\.$/, (cols) => `O CSV não tem as colunas de fluxo obrigatórias: ${cols}.`],
+  [
+    /^CSV is missing required flow columns: (.+)\.$/,
+    (cols) =>
+      `O CSV não tem as colunas de fluxo obrigatórias: ${cols
+        .replace(/origin latitude/g, "latitude de origem")
+        .replace(/origin longitude/g, "longitude de origem")
+        .replace(/destination latitude/g, "latitude de destino")
+        .replace(/destination longitude/g, "longitude de destino")}.`,
+  ],
   [/^Could not parse (KML|GPX) XML\.$/, (format) => `Não foi possível ler o XML do arquivo ${format}.`],
   [
     /^The file contains no supported point or line features\./,

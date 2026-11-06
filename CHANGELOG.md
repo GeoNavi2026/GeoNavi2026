@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Flow CSVs no longer need the US Census (CTPP) column names. Origin and
+  destination coordinates are found by name in English or Portuguese
+  (`O_lat`, `origin_lat`, `latitude_origem`, ...); id and flow size columns
+  are optional (each row counts as 1 without one). Semicolon separators and
+  Brazilian number formats (`-23,55`, `1.234`) are read correctly, and `hora`
+  is recognised as a time column.
+- `data/test/sao_paulo_viagens.csv`: fictional São Paulo commute flows in
+  Brazilian CSV format, for demos with the Brazil team.
+
 ### Changed
 
 - Time is no longer a style option. The bar at the bottom of the map is now an
