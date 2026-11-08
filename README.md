@@ -13,7 +13,8 @@ The project was built for the University of Florida Senior Design course (CIS 49
 - **Upload a file and see it on a map.** Drag and drop a file, or use "Browse files." Points appear as dots and flows appear as lines. Thicker lines mean bigger flows.
 - **Many file formats.** CSV, JSON, GeoJSON, GeoParquet, KML, GPX, and zipped shapefiles. See [Supported formats](#supported-formats).
 - **Your data stays on your computer.** Files are processed in the browser with DuckDB WASM. Nothing is uploaded to a server.
-- **Column styling.** Each column in the sidebar has a Style menu. A column can drive the color, size, or shape of the points, or the color and width of the flows. Flows show arrows for their direction. A legend explains the styles.
+- **Column styling.** Each column in the sidebar has a Style menu. A column can drive the color, size, or shape of the points, or the color and width of the flows. A legend explains the styles.
+- **Flow lines.** The "Flow lines" section in the sidebar sets how every flow is drawn, whatever the columns say: a color (a column set to Color overrides it), solid, dashed, dotted, dash-dot, or long dash lines, dashes that move from origin to destination, and arrows for the direction (off by default). Arrows and animation switch off while more than 10,000 flows are shown; filter or isolate points to bring them back.
 - **Filter bar.** The bar at the bottom of the map steps through the values of any column you pick (hours of the day, number ranges, or categories) and shows only the matching points or flows. It starts on a time column when the data has one. Use **One** to pick a single value or **Many** to select a range, and press play to animate it.
 - **English and Portuguese.** Switch the interface language with the EN / PT button in the top-right corner.
 - **Swap data without leaving the map.** Use "New upload" or drop a new file anywhere on the map.
