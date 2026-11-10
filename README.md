@@ -67,6 +67,8 @@ Other commands:
 | `npm run build` | Production build |
 | `npm start` | Runs the production build |
 | `npm run lint` | Checks the code with ESLint |
+| `npm run test` | Runs the unit tests |
+| `npm run test:coverage` | Runs tests with coverage |
 
 ## How it works
 

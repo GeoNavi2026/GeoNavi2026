@@ -67,6 +67,8 @@ Outros comandos:
 | `npm run build` | Gera a versão de produção |
 | `npm start` | Roda a versão de produção |
 | `npm run lint` | Verifica o código com o ESLint |
+| `npm test` | Executa os testes unitários |
+| `npm run test:coverage` | Executa testes com cobertura |
 
 ## Como funciona
 
