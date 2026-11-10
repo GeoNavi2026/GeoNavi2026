@@ -1,64 +1,114 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+**English** | [Português (Brasil)](README.pt-BR.md)
 
-## Getting Started
+# GeoNavi
 
-First, install the project dependencies:
+GeoNavi is a web app for exploring geographic flow data on an interactive map. You upload a file of places and the movement between them (for example, how many people commute from one neighborhood to another), and GeoNavi draws the points and flows so you can explore them.
+
+The project was built for the University of Florida Senior Design course (CIS 4914, Fall 2026), with Dr. Hu as advisor. The main test dataset is Census Transportation Planning Products (CTPP) data: tract-to-tract commute flows for Florida, with about 8,000 census tracts and 220,000 flows.
+
+**Live site:** https://geo-navi2026.vercel.app
+
+## Features
+
+- **Upload a file and see it on a map.** Drag and drop a file, or use "Browse files." Points appear as dots and flows appear as lines. Thicker lines mean bigger flows.
+- **Many file formats.** CSV, JSON, GeoJSON, GeoParquet, KML, GPX, and zipped shapefiles. See [Supported formats](#supported-formats).
+- **Your data stays on your computer.** Files are processed in the browser with DuckDB WASM. Nothing is uploaded to a server.
+- **Column styling.** Each column in the sidebar has a Style menu. A column can drive the color, size, or shape of the points, or the color and width of the flows. Flows show arrows for their direction. A legend explains the styles.
+- **Filter bar.** The bar at the bottom of the map steps through the values of any column you pick (hours of the day, number ranges, or categories) and shows only the matching points or flows. It starts on a time column when the data has one. Use **One** to pick a single value or **Many** to select a range, and press play to animate it.
+- **English and Portuguese.** Switch the interface language with the EN / PT button in the top-right corner.
+- **Swap data without leaving the map.** Use "New upload" or drop a new file anywhere on the map.
+- **Sample dataset.** "Try the sample dataset" on the upload screen loads example data, so you can try the app without a file.
+
+## Supported formats
+
+| Format | Extension | Notes |
+| --- | --- | --- |
+| Flow CSV | `.csv` | Needs latitude and longitude columns for the origin and destination. Names are detected in English or Portuguese, for example `O_lat`, `origin_lat`, or `latitude_origem`. Origin/destination id columns (`Otract`, `origem`, `zona_destino`, …) and a flow size column (`EST`, `weight`, `trips`, `viagens`, …) are optional. Commas or semicolons as separators, and decimal points or decimal commas (`-23,55`), both work. A column named `time`, `hour`, or `hora` starts the filter bar on the hours of the day. |
+| GeoNavi JSON | `.json` | Our own format with `nodes` and `edges`. See [docs/data-contract.md](docs/data-contract.md). |
+| GeoJSON | `.geojson`, `.json` | Point and LineString features. Lines can have `source`, `target`, and `weight` properties. |
+| GeoParquet | `.parquet`, `.geoparquet` | WKB geometry in WGS 84 (latitude and longitude). |
+| KML | `.kml` | Placemarks with points and lines. |
+| GPX | `.gpx` | Waypoints, tracks, and routes. |
+| Shapefile | `.zip` | Upload the zip itself, not the files inside it. It must contain at least `.shp` and `.dbf`. Include `.shx` and `.prj` if you have them. |
+
+**Limits:**
+- Files up to 50 MB.
+- Only points and lines. Polygon data (areas) is not supported.
+- Coordinates must be latitude and longitude (WGS 84).
+
+## Sample files
+
+Test files are in [`data/test/`](data/test/):
+
+| File | What it contains |
+| --- | --- |
+| `flow_demo.json`, `flow_demo.geojson`, `flow_demo.parquet` | A few Gainesville tracts and the flows between them, in three formats |
+| `flows_hourly.csv` | Flows with a `time` column, for trying the filter bar |
+| `sao_paulo_viagens.csv` | Fictional commute flows between São Paulo districts, in Brazilian format (semicolons, decimal commas, Portuguese column names) |
+| `tracts_demo.geojson` | Points only (no flows), with population, income, and land use columns for trying the styling |
+
+## Run it locally
+
+You need [Node.js](https://nodejs.org) 20 or newer.
 
 ```bash
+git clone https://github.com/GeoNavi2026/GeoNavi2026.git
+cd GeoNavi2026
 npm install
-```
-
-Then run the development server:
-
-```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open http://localhost:3000.
 
-Run the upload format unit tests with:
+Other commands:
 
-```bash
-npm test
-```
+| Command | What it does |
+| --- | --- |
+| `npm run build` | Production build |
+| `npm start` | Runs the production build |
+| `npm run lint` | Checks the code with ESLint |
 
-Use `npm run test:watch` while developing tests. The suite exercises valid
-GeoNavi JSON, GeoJSON, CSV, GeoParquet, KML, GPX, and zipped shapefile uploads
-using fixtures in `data/test/`.
+## How it works
 
-## Uploading data
+1. **Upload.** The browser reads the file. CSV, JSON, and GeoParquet are parsed with DuckDB WASM. KML and GPX use `@tmcw/togeojson`, and shapefiles use `shpjs`.
+2. **Convert.** Every format is converted into one shared shape: a list of **nodes** (points) and **edges** (flows between points). The types are in `lib/types.ts`.
+3. **Draw.** MapLibre GL draws the nodes and edges on an OpenStreetMap base map.
 
-The Explorer processes uploads locally in your browser. It accepts GeoNavi
-JSON, GeoJSON, GeoParquet (WKB geometry, WGS 84), flow CSV, KML, GPX, and ZIP
-archives containing shapefiles.
-Shapefile uploads must be zipped with the required companion files (at least
-`.shp` and `.dbf`; include `.shx` and `.prj` when available). Point and line
-features are supported; polygon-only files are not yet displayed. Line
-geometries retain their full paths. Data is converted to GeoNavi's point/edge
-model, so polygon fills, styling, and other GIS-specific symbology are not
-preserved.
+## Project structure
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Path | Contents |
+| --- | --- |
+| `app/` | Pages: upload screen (`/`), map (`/explore`), and dataset catalog (`/catalog`) |
+| `app/components/` | Interface components (map, sidebar, legend, filter bar, language switch) |
+| `app/api/datasets/` | API that lists and serves datasets stored in `data/datasets/` |
+| `lib/process-upload.ts` | Reads every upload format and converts it to nodes and edges |
+| `lib/csv-columns.ts` | Finds the flow columns in a CSV (English or Portuguese names) and reads numbers in either format |
+| `lib/types.ts` | Data contract shared by the parser, API, and map |
+| `lib/point-style.ts`, `lib/filter-axis.ts` | Column styling and filter bar logic |
+| `lib/i18n.tsx` | English and Portuguese interface text |
+| `docs/data-contract.md` | Data format documentation |
+| `data/test/` | Sample files |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## API
 
-## Learn More
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/datasets` | List of available datasets |
+| `GET /api/datasets/[id]` | One dataset with its nodes and edges |
 
-To learn more about Next.js, take a look at the following resources:
+## Known limitations
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Column names from uploaded files are shown as they are, not translated.
+- Polygon data is not supported.
+- Uploaded data is not saved. Reloading the page clears it.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Team
 
-## Deploy on Vercel
+University of Florida, CIS 4914 Senior Design, Fall 2026
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Amogh Allani
+- Ryan Feldbush
+- Tyler Pencinger
+- Zach Pinet
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Advisor: Dr. Hu

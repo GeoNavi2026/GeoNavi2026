@@ -2,28 +2,44 @@
 /* eslint-disable @next/next/no-img-element -- static SVG icons exported from Figma */
 
 // Figma "Style select" next to each column, its "Style menu", and the
-// "Color settings" popover (page "3 · Customization").
+// "Color settings" popover (page "3 · Customization"). Columns on points
+// style the points; flow-only columns style the flows.
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import {
   channelAvailability,
+  FLOW_CHANNELS,
+  flowChannelAvailability,
+  STYLE_CHANNELS,
+  type ChannelAvailability,
   type ColorScale,
   type ColumnProfile,
+  type FlowChannel,
   type StyleChannel,
+  type StyleTarget,
 } from "@/lib/point-style";
 import { useI18n, type MessageKey } from "@/lib/i18n";
 import Button from "./Button";
 import StyleIcon, { type StyleIconKind } from "./StyleIcon";
 
-const LABELS: Record<StyleChannel, MessageKey> = { color: "style.color", size: "style.size", shape: "style.shape", time: "style.time" };
+type Channel = StyleChannel | FlowChannel;
+
+const LABELS: Record<Channel, MessageKey> = {
+  color: "style.color",
+  size: "style.size",
+  shape: "style.shape",
+  width: "style.width",
+};
 
 type ColumnStyleControlProps = {
   column: string;
   /** lat/lon columns place the points, so they can't style them. */
   positional: boolean;
   profile: ColumnProfile;
-  channel: StyleChannel | null;
-  onChannelChange: (channel: StyleChannel | null) => void;
+  /** Points for columns on points; flows for flow-only columns. */
+  target: StyleTarget;
+  channel: Channel | null;
+  onChannelChange: (channel: Channel | null) => void;
   colorScale: ColorScale;
   colorReverse: boolean;
   onColorOptionsChange: (options: { colorScale?: ColorScale; colorReverse?: boolean }) => void;
@@ -31,13 +47,14 @@ type ColumnStyleControlProps = {
 
 type Open = null | { kind: "menu" | "settings"; rect: DOMRect };
 
-const iconFor = (channel: StyleChannel | null, numeric: boolean): StyleIconKind =>
-  channel === "color" ? (numeric ? "color" : "rainbow") : channel ?? "none";
+const iconFor = (channel: Channel | null, numeric: boolean, target: StyleTarget): StyleIconKind =>
+  channel === "color" ? (numeric ? (target === "flows" ? "flowColor" : "color") : "rainbow") : channel ?? "none";
 
 export default function ColumnStyleControl({
   column,
   positional,
   profile,
+  target,
   channel,
   onChannelChange,
   colorScale,
@@ -79,15 +96,11 @@ export default function ColumnStyleControl({
     if (open?.kind === "menu") panelRef.current?.querySelector<HTMLButtonElement>("[role=menuitemradio]:not([aria-disabled=true])")?.focus();
   }, [open]);
 
-  const available = channelAvailability(profile);
-  // lat/lon columns place the points; flow-only columns can only drive Time.
-  if (positional || (!profile.onPoints && !available.time.enabled)) {
+  // lat/lon columns place the points.
+  if (positional) {
     return (
-      <span
-        className="shrink-0 px-[8px] text-[11px] leading-[16px] text-ink-muted"
-        title={t(positional ? "style.positionTitle" : "style.flowsTitle")}
-      >
-        {t(positional ? "style.position" : "style.flows")}
+      <span className="shrink-0 px-[8px] text-[11px] leading-[16px] text-ink-muted" title={t("style.positionTitle")}>
+        {t("style.position")}
       </span>
     );
   }
@@ -112,6 +125,12 @@ export default function ColumnStyleControl({
     items[targets[e.key]].focus(); // skips disabled
   }
 
+  const flows = target === "flows";
+  const numeric = flows ? profile.flows.numeric : profile.numeric;
+  const channels: Channel[] = flows ? FLOW_CHANNELS : STYLE_CHANNELS;
+  const available: Partial<Record<Channel, ChannelAvailability>> = flows
+    ? flowChannelAvailability(profile)
+    : channelAvailability(profile);
   const toggle = () => {
     if (open) return setOpen(null);
     const rect = triggerRef.current?.getBoundingClientRect();
@@ -131,7 +150,7 @@ export default function ColumnStyleControl({
           channel ? "bg-chip hover:bg-[#323236]" : "border border-dashed border-line-strong hover:bg-chip"
         } ${open ? "ring-[1.5px] ring-accent-text" : ""}`}
       >
-        <StyleIcon kind={iconFor(channel, profile.numeric)} />
+        <StyleIcon kind={iconFor(channel, numeric, target)} />
         <span className={`text-[12px] leading-[16px] font-medium whitespace-nowrap ${channel ? "text-ink" : "text-ink-muted"}`}>
           {t(channel ? LABELS[channel] : "style.style")}
         </span>
@@ -148,34 +167,34 @@ export default function ColumnStyleControl({
           style={{ top: open.rect.bottom + 6, left: open.rect.right - 236 }}
         >
           <div className="flex gap-[6px] px-[10px] pt-[6px] pb-[4px] text-[11px] leading-[14px]">
-            <span className="font-medium text-ink-muted">{t("style.style")}</span>
+            <span className="font-medium text-ink-muted">{t(flows ? "style.flowStyle" : "style.style")}</span>
             <span className="truncate font-mono text-ink">{column}</span>
           </div>
           <MenuItem
             icon="none"
             label={t("style.noStyle")}
-            hint={t("style.noStyleHint")}
+            hint={t(flows ? "style.noStyleHintFlows" : "style.noStyleHint")}
             selected={channel === null}
             onSelect={() => {
               onChannelChange(null);
               setOpen(null);
             }}
           />
-          {(Object.keys(LABELS) as StyleChannel[]).map((c) => (
+          {channels.map((c) => (
             <MenuItem
               key={c}
-              icon={iconFor(c, profile.numeric)}
+              icon={iconFor(c, numeric, target)}
               label={t(LABELS[c])}
-              hint={hint(available[c].hint)}
+              hint={hint(available[c]!.hint)}
               selected={channel === c}
-              disabled={!available[c].enabled}
+              disabled={!available[c]!.enabled}
               onSelect={() => {
                 onChannelChange(c);
                 setOpen(null);
               }}
             />
           ))}
-          {channel === "color" && profile.numeric && (
+          {channel === "color" && numeric && (
             <>
               <div className="my-[2px] h-px bg-line-strong/50" />
               <button
@@ -204,8 +223,8 @@ export default function ColumnStyleControl({
           style={{ top: Math.max(8, open.rect.top - 8), left: open.rect.right + 12 }}
         >
           <div className="flex items-center gap-[8px]">
-            <StyleIcon kind="color" />
-            <span className="text-[14px] leading-[20px] font-semibold text-ink">{t("style.color")}</span>
+            <StyleIcon kind={flows ? "flowColor" : "color"} />
+            <span className="text-[14px] leading-[20px] font-semibold text-ink">{t(flows ? "style.flowColor" : "style.color")}</span>
             <span className="min-w-0 flex-1 truncate font-mono text-[12px] leading-[16px] text-ink-muted">{column}</span>
             <button
               type="button"

@@ -5,6 +5,7 @@ import shp from "shpjs";
 import type { FeatureCollection, Geometry } from "geojson";
 import { parseWkbHex } from "./wkb";
 import type { DatasetResponse, Edge, Node } from "./types";
+import { findFlowColumns, parseNumber } from "./csv-columns";
 import { columnKind, describeRecords, summarizeDataset, TIME_COLUMN, type TableSummary } from "./upload-summary";
 
 export interface UploadResult {
@@ -16,16 +17,7 @@ export interface UploadResult {
 // DuckDB column types that hold numbers.
 const NUMERIC_TYPE = /^(TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT|UHUGEINT|FLOAT|DOUBLE|REAL|DECIMAL)/i;
 
-type CsvRow = {
-  origin: string | null;
-  destination: string | null;
-  weight: number | null;
-  originLatitude: number | null;
-  originLongitude: number | null;
-  destinationLatitude: number | null;
-  destinationLongitude: number | null;
-  [key: string]: unknown;
-};
+type CsvRow = Record<string, string | null>;
 
 type Scalar = number | string | boolean | null;
 type JsonObject = Record<string, unknown>;
@@ -468,14 +460,15 @@ export async function processUpload(file: File): Promise<UploadResult> {
       const columns = await connection.query(
         `DESCRIBE SELECT * FROM read_csv_auto('${filename}', all_varchar = true)`
       );
-      const columnNames = new Set(
-        columns.toArray().map((row) => String((row.toJSON() as { column_name: unknown }).column_name))
-      );
-      const requiredColumns = ["Otract", "Dtract", "EST", "O_lat", "O_lon", "D_lat", "D_lon"];
-      const missingColumns = requiredColumns.filter((column) => !columnNames.has(column));
-      if (missingColumns.length) {
-        throw new Error(`CSV is missing required flow columns: ${missingColumns.join(", ")}.`);
+      const columnNames = columns.toArray().map((row) => String((row.toJSON() as { column_name: unknown }).column_name));
+
+      // English or Portuguese names (O_lat, latitude_origem, ...)
+      const found = findFlowColumns(columnNames);
+      if ("missing" in found) {
+        throw new Error(`CSV is missing required flow columns: ${found.missing.join(", ")}.`);
       }
+      const cols = found;
+      const coordinateColumns = [cols.originLat, cols.originLon, cols.destinationLat, cols.destinationLon];
 
       const typed = await connection.query(
         `DESCRIBE SELECT * FROM read_csv_auto('${filename}')`
@@ -488,18 +481,7 @@ export async function processUpload(file: File): Promise<UploadResult> {
       // A column like "time" or "timestamp" becomes each edge's `t`.
       const timeColumn = csvColumns.find(({ name }) => TIME_COLUMN.test(name))?.name;
 
-      const result = await connection.query(`
-        SELECT
-          *,
-          trim(Otract) AS origin,
-          trim(Dtract) AS destination,
-          try_cast(nullif(trim(EST), '') AS DOUBLE) AS weight,
-          try_cast(nullif(trim(O_lat), '') AS DOUBLE) AS originLatitude,
-          try_cast(nullif(trim(O_lon), '') AS DOUBLE) AS originLongitude,
-          try_cast(nullif(trim(D_lat), '') AS DOUBLE) AS destinationLatitude,
-          try_cast(nullif(trim(D_lon), '') AS DOUBLE) AS destinationLongitude
-        FROM read_csv_auto('${filename}', all_varchar = true)
-      `);
+      const result = await connection.query(`SELECT * FROM read_csv_auto('${filename}', all_varchar = true)`);
 
       const rows = result.toArray().map(
         (row) => row.toJSON() as unknown as CsvRow
@@ -508,23 +490,20 @@ export async function processUpload(file: File): Promise<UploadResult> {
 
       const coordinatesByTract = new Map<string, [number, number]>();
       const edges: Edge[] = rows.map((row, index) => {
-        const { origin, destination, weight } = row;
-        if (!origin || !destination || weight === null || !Number.isFinite(weight)) {
+        const oLat = parseNumber(row[cols.originLat]), oLon = parseNumber(row[cols.originLon]);
+        const dLat = parseNumber(row[cols.destinationLat]), dLon = parseNumber(row[cols.destinationLon]);
+
+        // no id columns: the point itself is the id
+        const origin = (cols.origin ? row[cols.origin]?.trim() : `${oLat},${oLon}`) || null;
+        const destination = (cols.destination ? row[cols.destination]?.trim() : `${dLat},${dLon}`) || null;
+        const weight = cols.weight ? parseNumber(row[cols.weight]) : 1;
+
+        if (!origin || !destination || weight === null) {
           throw new Error(`Invalid CSV row ${index + 2}`);
         }
 
-        const originCoords = coordinates(
-          row.originLongitude,
-          row.originLatitude,
-          origin,
-          index + 2
-        );
-        const destinationCoords = coordinates(
-          row.destinationLongitude,
-          row.destinationLatitude,
-          destination,
-          index + 2
-        );
+        const originCoords = coordinates(oLon, oLat, origin, index + 2);
+        const destinationCoords = coordinates(dLon, dLat, destination, index + 2);
 
         for (const [tractId, point] of [
           [origin, originCoords],
@@ -543,15 +522,13 @@ export async function processUpload(file: File): Promise<UploadResult> {
           target: destination,
           weight,
           t: timeColumn ? String(row[timeColumn] ?? "").trim() || undefined : undefined,
+          // Every column but the coordinates stays on the flow, so endpoint and
+          // weight columns (Otract, EST, …) can drive the filter bar and styles.
           properties: scalarProperties(
             Object.fromEntries(
-              Object.entries(row).filter(([key]) =>
-                ![
-                  "Otract", "Dtract", "EST", "O_lat", "O_lon", "D_lat", "D_lon",
-                  "origin", "destination", "weight", "originLatitude", "originLongitude",
-                  "destinationLatitude", "destinationLongitude",
-                ].includes(key)
-              )
+              Object.entries(row)
+                .filter(([key]) => !coordinateColumns.includes(key))
+                .map(([key, value]) => [key, /^0\d/.test(value ?? "") ? value : parseNumber(value) ?? value]) // "1.234,5" -> 1234.5, keeps "01..." ids
             )
           ),
         };

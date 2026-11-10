@@ -72,8 +72,16 @@ function inside(px: number, py: number, poly: Point[]) {
 }
 
 /** Single-channel signed distance field for a shape, as RGBA image data. */
-export function shapeSdf(shape: ShapeName) {
-  const poly = SHAPE_POLYGONS[shape].map(([x, y]) => [x * UNIT_RADIUS, y * UNIT_RADIUS] as Point);
+export const shapeSdf = (shape: ShapeName) => polygonSdf(SHAPE_POLYGONS[shape]);
+
+// Notched arrowhead pointing along +x: placed on a flow line, it points the
+// way the flow goes.
+const ARROW: Point[] = [[1.1, 0], [-0.8, -0.85], [-0.35, 0], [-0.8, 0.85]];
+export const ARROW_IMAGE = "gn-arrow";
+export const arrowSdf = () => polygonSdf(ARROW);
+
+function polygonSdf(unitPoly: Point[]) {
+  const poly = unitPoly.map(([x, y]) => [x * UNIT_RADIUS, y * UNIT_RADIUS] as Point);
   const data = new Uint8Array(IMAGE_SIZE * IMAGE_SIZE * 4);
   const c = IMAGE_SIZE / 2;
   for (let y = 0; y < IMAGE_SIZE; y++) {

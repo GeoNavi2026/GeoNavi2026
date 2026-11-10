@@ -3,8 +3,8 @@
 
 // Figma pages "2 · Map" and "3 · Customization": sidebar with the uploaded
 // file and its columns (each with a style control), the map, the legend and
-// the time slider. "New upload" and dropping a file anywhere replace the data
-// in place.
+// the filter bar, which steps through the values of a column picked in it.
+// "New upload" and dropping a file anywhere replace the data in place.
 
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -12,12 +12,20 @@ import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   assignChannel,
   channelForColumn,
+  computeFlowStyles,
   computePointStyles,
+  DEFAULT_FLOW_STYLE,
   DEFAULT_POINT_STYLE,
+  FLOW_CHANNELS,
+  filterOption,
   profileColumn,
+  STYLE_CHANNELS,
+  type FlowChannel,
+  type FlowStyleState,
   type PointStyleState,
+  type StyleChannel,
 } from "@/lib/point-style";
-import { buildTimeAxis } from "@/lib/time-axis";
+import { buildFilterAxis } from "@/lib/filter-axis";
 import { useUpload } from "@/lib/upload-store";
 import { useI18n } from "@/lib/i18n";
 import { useFileUpload } from "@/lib/use-file-upload";
@@ -28,7 +36,7 @@ import DashedOutline from "./DashedOutline";
 import LanguageToggle from "./LanguageToggle";
 import Logo from "./Logo";
 import MapLegend from "./MapLegend";
-import TimeSlider from "./TimeSlider";
+import FilterBar, { type FilterColumnOption, type FilterMode } from "./FilterBar";
 
 // MapLibre needs `window`, so never render the map on the server.
 const MapView = dynamic(() => import("./MapView"), {
@@ -37,6 +45,8 @@ const MapView = dynamic(() => import("./MapView"), {
 });
 
 const hasFiles = (e: DragEvent) => e.dataTransfer.types.includes("Files");
+// Room the filter bar takes at the bottom of the map, kept clear when fitting the data.
+const FILTER_BAR_SPACE = 210;
 
 export default function MapScreen() {
   const router = useRouter();
@@ -48,9 +58,16 @@ export default function MapScreen() {
     if (!upload) router.replace("/");
   }, [upload, router]);
 
-  const [chosenStep, setChosenStep] = useState<number | null>(null);
+  // Selected filter steps (sorted); null until the user picks, meaning the busiest step.
+  const [chosenSteps, setChosenSteps] = useState<number[] | null>(null);
+  const [filterMode, setFilterMode] = useState<FilterMode>("one");
+  // Points whose flows are isolated by double-click (separate from the filter bar).
+  const [isolated, setIsolated] = useState<string[] | null>(null);
   const [playing, setPlaying] = useState(false);
   const [pointStyle, setPointStyle] = useState<PointStyleState>(DEFAULT_POINT_STYLE);
+  const [flowStyle, setFlowStyle] = useState<FlowStyleState>(DEFAULT_FLOW_STYLE);
+  // Column picked in the filter bar; undefined until the user picks one (or "No filter").
+  const [filterChoice, setFilterChoice] = useState<string | null | undefined>(undefined);
   const { busy, error, uploadFile, openPicker, inputProps } = useFileUpload(setUpload);
   // Counts nested dragenter/dragleave pairs so the overlay doesn't flicker over child elements.
   const dragDepth = useRef(0);
@@ -62,14 +79,11 @@ export default function MapScreen() {
   if (stateFor !== datasetId) {
     setStateFor(datasetId);
     setPointStyle(DEFAULT_POINT_STYLE);
-    setChosenStep(null);
-    setPlaying(false);
-  }
-  // A different Time column: start on its busiest step, paused.
-  const [stepFor, setStepFor] = useState(pointStyle.time);
-  if (stepFor !== pointStyle.time) {
-    setStepFor(pointStyle.time);
-    setChosenStep(null);
+    setFlowStyle(DEFAULT_FLOW_STYLE);
+    setFilterChoice(undefined);
+    setFilterMode("one");
+    setIsolated(null);
+    setChosenSteps(null);
     setPlaying(false);
   }
 
@@ -80,23 +94,69 @@ export default function MapScreen() {
       ),
     [upload]
   );
-  const timeAxis = useMemo(() => {
-    const profile = pointStyle.time ? profiles.get(pointStyle.time) : undefined;
-    if (!upload || !pointStyle.time || !profile?.timeTarget) return null;
-    return buildTimeAxis(upload.dataset, pointStyle.time, profile.timeTarget, profile.isTimeColumn);
-  }, [upload, pointStyle.time, profiles]);
+  // Columns whose values are on points or flows (not lat/lon); unusable ones
+  // stay listed, disabled, with the reason.
+  const filterOptions = useMemo<FilterColumnOption[]>(
+    () =>
+      (upload?.columns ?? [])
+        .filter((c) => c.kind !== "lat" && c.kind !== "lon" && profiles.get(c.name)?.filterTarget)
+        .map((c) => ({ name: c.name, isTime: c.kind === "time", ...filterOption(profiles.get(c.name)!) })),
+    [upload, profiles]
+  );
+  // Until the user picks, filter by the first usable time column, if any.
+  const filterColumn =
+    filterChoice !== undefined ? filterChoice : (filterOptions.find((o) => o.isTime && o.enabled)?.name ?? null);
+
+  // A different filter column: start on its busiest step, paused.
+  const [stepFor, setStepFor] = useState(filterColumn);
+  if (stepFor !== filterColumn) {
+    setStepFor(filterColumn);
+    setChosenSteps(null);
+    setPlaying(false);
+  }
+
+  const filterAxis = useMemo(() => {
+    const profile = filterColumn ? profiles.get(filterColumn) : undefined;
+    if (!upload || !filterColumn || !profile?.filterTarget) return null;
+    return buildFilterAxis(upload.dataset, filterColumn, profile.filterTarget, profile.isTimeColumn);
+  }, [upload, filterColumn, profiles]);
   let peakStep = 0;
-  if (timeAxis) for (let i = 1; i < timeAxis.totals.length; i++) if (timeAxis.totals[i] > timeAxis.totals[peakStep]) peakStep = i;
-  const step = chosenStep ?? peakStep;
-  const stepCount = timeAxis?.labels.length ?? 1;
+  if (filterAxis) for (let i = 1; i < filterAxis.totals.length; i++) if (filterAxis.totals[i] > filterAxis.totals[peakStep]) peakStep = i;
+  const stepCount = filterAxis?.labels.length ?? 1;
+  const selection = chosenSteps ?? [peakStep];
+  const selectSteps = (steps: number[]) => {
+    setPlaying(false);
+    setChosenSteps([...new Set(steps)].sort((a, b) => a - b));
+  };
   const pointStyles = useMemo(
     () => (upload ? computePointStyles(upload.dataset, pointStyle, profiles) : null),
     [upload, pointStyle, profiles]
   );
+  const flowStyles = useMemo(
+    () => (upload ? computeFlowStyles(upload.dataset, flowStyle, profiles) : null),
+    [upload, flowStyle, profiles]
+  );
+
+  // Esc shows every flow again.
+  useEffect(() => {
+    if (!isolated) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsolated(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isolated]);
 
   useEffect(() => {
     if (!playing) return;
-    const id = setInterval(() => setChosenStep((s) => ((s ?? peakStep) + 1) % stepCount), 1000);
+    // Move the whole selection one step forward, wrapping around.
+    const id = setInterval(
+      () =>
+        setChosenSteps((steps) =>
+          (steps ?? [peakStep]).map((s) => (s + 1) % stepCount).sort((a, b) => a - b)
+        ),
+      1000
+    );
     return () => clearInterval(id);
   }, [playing, peakStep, stepCount]);
 
@@ -170,20 +230,37 @@ export default function MapScreen() {
             <p className="text-[12px] leading-[16px] text-ink-muted">{t("map.columnsHint")}</p>
           </div>
           <ul className="flex w-full flex-col gap-[2px]">
-            {upload.columns.map((column) => (
-              <ColumnItem key={column.name} column={column}>
-                <ColumnStyleControl
-                  column={column.name}
-                  positional={column.kind === "lat" || column.kind === "lon"}
-                  profile={profiles.get(column.name)!}
-                  channel={channelForColumn(pointStyle, column.name)}
-                  onChannelChange={(channel) => setPointStyle((s) => assignChannel(s, column.name, channel))}
-                  colorScale={pointStyle.colorScale}
-                  colorReverse={pointStyle.colorReverse}
-                  onColorOptionsChange={(options) => setPointStyle((s) => ({ ...s, ...options }))}
-                />
-              </ColumnItem>
-            ))}
+            {upload.columns.map((column) => {
+              const profile = profiles.get(column.name)!;
+              // Columns on points style the points; flow-only columns, the flows.
+              const onFlows = !profile.onPoints;
+              const style = onFlows ? flowStyle : pointStyle;
+              return (
+                <ColumnItem key={column.name} column={column}>
+                  <ColumnStyleControl
+                    column={column.name}
+                    positional={column.kind === "lat" || column.kind === "lon"}
+                    profile={profile}
+                    target={onFlows ? "flows" : "points"}
+                    channel={
+                      onFlows
+                        ? channelForColumn(flowStyle, FLOW_CHANNELS, column.name)
+                        : channelForColumn(pointStyle, STYLE_CHANNELS, column.name)
+                    }
+                    onChannelChange={(channel) =>
+                      onFlows
+                        ? setFlowStyle((s) => assignChannel(s, FLOW_CHANNELS, column.name, channel as FlowChannel | null))
+                        : setPointStyle((s) => assignChannel(s, STYLE_CHANNELS, column.name, channel as StyleChannel | null))
+                    }
+                    colorScale={style.colorScale}
+                    colorReverse={style.colorReverse}
+                    onColorOptionsChange={(options) =>
+                      onFlows ? setFlowStyle((s) => ({ ...s, ...options })) : setPointStyle((s) => ({ ...s, ...options }))
+                    }
+                  />
+                </ColumnItem>
+              );
+            })}
           </ul>
         </section>
       </aside>
@@ -198,42 +275,74 @@ export default function MapScreen() {
         <MapView
           dataset={upload.dataset}
           pointStyles={pointStyles}
-          timeFilter={timeAxis ? { target: timeAxis.target, stepOf: timeAxis.stepOf, step } : null}
+          flowStyles={flowStyles}
+          filter={filterAxis ? { target: filterAxis.target, stepOf: filterAxis.stepOf, steps: selection } : null}
+          bottomInset={FILTER_BAR_SPACE}
+          isolated={isolated}
+          onPointDoubleClick={(id, { additive }) => {
+            // Isolate the flows starting or ending at this point. Ctrl/⌘ adds or
+            // removes it from the isolated points; double-clicking the only
+            // isolated point again shows every flow. Without flows, keep the zoom.
+            if (!upload.dataset.edges.length) return false;
+            setIsolated((current) => {
+              if (additive) {
+                const without = (current ?? []).filter((p) => p !== id);
+                const next = without.length < (current ?? []).length ? without : [...without, id];
+                return next.length ? next : null;
+              }
+              return current?.length === 1 && current[0] === id ? null : [id];
+            });
+            return true;
+          }}
         />
+        {isolated && (
+          <div className="absolute top-[16px] left-[16px] flex max-w-[calc(100%-200px)] items-center gap-[6px] rounded-full border border-line bg-surface/94 py-[4px] pr-[4px] pl-[12px] shadow-[0px_2px_10px_0px_rgba(0,0,0,0.3)]">
+            <span className="truncate text-[12px] leading-[16px] font-medium text-ink" aria-live="polite">
+              {isolated.length === 1
+                ? t("isolate.one", { name: upload.dataset.nodes.find((n) => n.id === isolated[0])?.name ?? isolated[0] })
+                : plural(isolated.length, "isolate.many")}
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsolated(null)}
+              aria-label={t("isolate.clear")}
+              title={t("isolate.clear")}
+              className="flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full hover:bg-white/10"
+            >
+              <img src="/figma/icon-close.svg" width={12} height={12} alt="" />
+            </button>
+          </div>
+        )}
         {/* left of zoom */}
         <div className="absolute top-[16px] right-[62px]">
           <LanguageToggle />
         </div>
-        {/* Legend sits above the time slider when there is one. */}
-        <div
-          className={`pointer-events-none absolute left-[16px] flex items-end ${
-            timeAxis ? "top-[16px] bottom-[154px]" : "top-[16px] bottom-[42px]"
-          }`}
-        >
+        {/* Legend sits above the filter bar. */}
+        <div className="pointer-events-none absolute top-[16px] bottom-[164px] left-[16px] flex items-end">
           <div className="pointer-events-auto max-h-full">
-            <MapLegend key={datasetId} sections={pointStyles?.legend ?? []} />
+            <MapLegend key={datasetId} sections={[...(pointStyles?.legend ?? []), ...(flowStyles?.legend ?? [])]} />
           </div>
         </div>
-        {/* The time slider appears when a column is assigned the Time style. */}
-        {timeAxis && (
-          <div className="pointer-events-none absolute inset-x-[16px] bottom-[42px]">
-            <div className="pointer-events-auto">
-              <TimeSlider
-                column={timeAxis.column}
-                labels={timeAxis.labels}
-                ticks={timeAxis.ticks}
-                totals={timeAxis.totals}
-                step={step}
-                onStepChange={(s) => {
-                  setPlaying(false);
-                  setChosenStep(s);
-                }}
-                playing={playing}
-                onTogglePlay={() => setPlaying((p) => !p)}
-              />
-            </div>
+        <div className="pointer-events-none absolute inset-x-[16px] bottom-[42px]">
+          <div className="pointer-events-auto">
+            <FilterBar
+              options={filterOptions}
+              column={filterColumn}
+              onColumnChange={setFilterChoice}
+              axis={filterAxis}
+              mode={filterMode}
+              onModeChange={(mode) => {
+                setFilterMode(mode);
+                // Back to one value: keep the first selected step.
+                if (mode === "one") selectSteps([selection[0]]);
+              }}
+              selection={filterMode === "one" ? [selection[0]] : selection}
+              onSelectionChange={selectSteps}
+              playing={playing}
+              onTogglePlay={() => setPlaying((p) => !p)}
+            />
           </div>
-        )}
+        </div>
       </main>
 
       {(dragging || busy) && (
