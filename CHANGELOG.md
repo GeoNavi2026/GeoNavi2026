@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- "Export map" button in the sidebar header, between the logo and "New
+  upload": saves the current map view as a PNG or JPEG at the current view's
+  resolution, Full HD (1920 px wide) or 4K (3840 px wide), keeping the view's
+  shape. The image includes the point names, the legend (optional) and the
+  OpenStreetMap attribution, but not the app's controls or filter bar. Sizes
+  are capped at what the browser's GPU can render, and the panel lists the
+  size you will get.
 - Flow lines section in the sidebar (shown when the data has flows), for the
   look of the lines whatever the columns say: a colour (swatches or any custom
   colour; the default is still light to dark blue by weight, and a column set
