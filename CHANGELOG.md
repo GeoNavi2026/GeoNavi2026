@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Flow lines section in the sidebar (shown when the data has flows), for the
+  look of the lines whatever the columns say: a colour (swatches or any custom
+  colour; the default is still light to dark blue by weight, and a column set
+  to Color overrides it), a line style (solid, dashed,
+  dotted, dash-dot, long dash), an Animate switch that slides the dashes from
+  each flow's origin to its destination, and an Arrows switch for the
+  arrowheads. The section sits below the columns. Arrows and animation switch
+  off while more than 10,000 flows are shown, and come back once the filter
+  bar or isolation narrows them.
 - Flow CSVs no longer need the US Census (CTPP) column names. Origin and
   destination coordinates are found by name in English or Portuguese
   (`O_lat`, `origin_lat`, `latitude_origem`, ...); id and flow size columns
@@ -20,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Flow arrowheads are now off until the Arrows switch in the Flow lines section
+  is turned on; they used to be always drawn.
 - Time is no longer a style option. The bar at the bottom of the map is now an
   always-visible filter bar with a column picker: it steps through the values
   of the picked column (hours for time columns, values or ranges for numbers,

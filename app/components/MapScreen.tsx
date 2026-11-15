@@ -26,6 +26,7 @@ import {
   type StyleChannel,
 } from "@/lib/point-style";
 import { buildFilterAxis } from "@/lib/filter-axis";
+import { DEFAULT_LINE_STYLE, type FlowLineStyle } from "@/lib/flow-line-style";
 import { useUpload } from "@/lib/upload-store";
 import { useI18n } from "@/lib/i18n";
 import { useFileUpload } from "@/lib/use-file-upload";
@@ -33,6 +34,7 @@ import Button from "./Button";
 import ColumnItem from "./ColumnItem";
 import ColumnStyleControl from "./ColumnStyleControl";
 import DashedOutline from "./DashedOutline";
+import FlowLineControls from "./FlowLineControls";
 import LanguageToggle from "./LanguageToggle";
 import Logo from "./Logo";
 import MapLegend from "./MapLegend";
@@ -66,6 +68,8 @@ export default function MapScreen() {
   const [playing, setPlaying] = useState(false);
   const [pointStyle, setPointStyle] = useState<PointStyleState>(DEFAULT_POINT_STYLE);
   const [flowStyle, setFlowStyle] = useState<FlowStyleState>(DEFAULT_FLOW_STYLE);
+  // Dashes, moving dashes and arrows: the flow lines' look, independent of columns.
+  const [lineStyle, setLineStyle] = useState<FlowLineStyle>(DEFAULT_LINE_STYLE);
   // Column picked in the filter bar; undefined until the user picks one (or "No filter").
   const [filterChoice, setFilterChoice] = useState<string | null | undefined>(undefined);
   const { busy, error, uploadFile, openPicker, inputProps } = useFileUpload(setUpload);
@@ -80,6 +84,7 @@ export default function MapScreen() {
     setStateFor(datasetId);
     setPointStyle(DEFAULT_POINT_STYLE);
     setFlowStyle(DEFAULT_FLOW_STYLE);
+    setLineStyle(DEFAULT_LINE_STYLE);
     setFilterChoice(undefined);
     setFilterMode("one");
     setIsolated(null);
@@ -263,6 +268,10 @@ export default function MapScreen() {
             })}
           </ul>
         </section>
+
+        {upload.dataset.edges.length > 0 && (
+          <FlowLineControls style={lineStyle} onChange={setLineStyle} flowCount={upload.dataset.edges.length} />
+        )}
       </aside>
 
       <main className="relative min-h-0 flex-1">
@@ -276,6 +285,7 @@ export default function MapScreen() {
           dataset={upload.dataset}
           pointStyles={pointStyles}
           flowStyles={flowStyles}
+          lineStyle={lineStyle}
           filter={filterAxis ? { target: filterAxis.target, stepOf: filterAxis.stepOf, steps: selection } : null}
           bottomInset={FILTER_BAR_SPACE}
           isolated={isolated}
