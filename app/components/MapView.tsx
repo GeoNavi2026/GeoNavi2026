@@ -4,7 +4,7 @@
 // OpenStreetMap base map with the selected dataset drawn on top, styled to
 // the Figma "Map view". Browser-only: load it through next/dynamic with ssr: false.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { FeatureCollection } from "geojson";
 import {
   Map as MapLibreMap,
@@ -20,9 +20,18 @@ import {
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useI18n } from "@/lib/i18n";
+import {
+  dashFrames,
+  DASH_PATTERNS,
+  DEFAULT_LINE_STYLE,
+  MAX_DECORATED_FLOWS,
+  WEIGHT_RAMP,
+  type FlowLineStyle,
+} from "@/lib/flow-line-style";
 import { DEFAULT_POINT_COLOR, FLOW_WIDTH, RADIUS, type FlowStyles, type PointStyles } from "@/lib/point-style";
 import { ARROW_IMAGE, arrowSdf, ICON_UNIT_RADIUS_CSS, SHAPES, shapeImageName, shapeSdf } from "@/lib/shapes";
 import type { FilterTarget } from "@/lib/filter-axis";
+import type { ExportLabel, MapSnapshot } from "@/lib/map-export";
 import { toGeoJson } from "@/lib/to-geojson";
 import type { DatasetResponse } from "@/lib/types";
 
@@ -49,22 +58,27 @@ const OSM_STYLE: StyleSpecification = {
 const EMPTY: FeatureCollection = { type: "FeatureCollection", features: [] };
 
 // Flow width in px (set per flow, see edgeWidth) and colour: a Color column's
-// colour, else light to dark blue by weight relative to the dataset's max.
+// colour, else the colour picked in the sidebar, else light to dark blue by
+// weight relative to the dataset's max.
 const EDGE_WIDTH: ExpressionSpecification = ["get", "width"];
-const EDGE_COLOR: ExpressionSpecification = [
-  "coalesce", ["get", "color"],
-  ["interpolate", ["linear"], ["get", "norm"], 0, "#60a5fa", 1, "#1d4ed8"],
+const EDGE_WEIGHT_RAMP: ExpressionSpecification = [
+  "interpolate", ["linear"], ["get", "norm"], 0, WEIGHT_RAMP[0], 1, WEIGHT_RAMP[1],
 ];
+const edgeColor = (picked: string | null): ExpressionSpecification => [
+  "coalesce", ["get", "color"], picked ?? EDGE_WEIGHT_RAMP,
+];
+const EDGE_COLOR = edgeColor(null);
 // Offset each line to the right of its direction, so A→B and B→A sit side by
 // side with a 4px gap instead of on top of each other.
 const edgeOffset = (width: number) => width / 2 + 2;
 const EDGE_OFFSET: ExpressionSpecification = ["+", ["/", EDGE_WIDTH, 2], 2];
 // Arrowhead half-length in px for a flow of the given width.
 const arrowRadius = (width: number) => width * 0.9 + 5;
-// Arrows are drawn only while at most this many flows are shown: past it they
-// are clutter, and MapLibre fails outright on ~65k icons in one tile (which a
-// zoomed-out map of a big dataset reaches). Filtering or isolating brings them back.
-const MAX_ARROWS = 10_000;
+// Moving dashes: how many dash arrays one slide along the line is cut into,
+// and how long (ms) it takes. MapLibre has no dash offset, so each frame is
+// its own array. They are cached in a texture MapLibre never frees, so keep this small.
+const DASH_FRAME_COUNT = 16;
+const DASH_CYCLE_MS = 1200;
 
 // Node name pills are DOM markers; past this many they would slow the map down.
 const MAX_LABELS = 200;
@@ -91,6 +105,8 @@ type MapViewProps = {
   pointStyles?: PointStyles | null;
   /** Column-driven flow colours and widths; null or empty keeps the default look. */
   flowStyles?: FlowStyles | null;
+  /** Dash pattern, moving dashes and arrows for the flows, whatever their columns say. */
+  lineStyle?: FlowLineStyle;
   /**
    * Isolated points: only flows starting or ending at one of these are shown,
    * and points not connected to them are faded. Null shows every flow.
@@ -101,7 +117,84 @@ type MapViewProps = {
    * when it was handled to skip the map's double-click zoom.
    */
   onPointDoubleClick?: (id: string, options: { additive: boolean }) => boolean;
+  /** Set to the map's exporter while the map is mounted, for "Export map". */
+  exporterRef?: RefObject<MapExporter | null>;
 };
+
+export interface MapExporter {
+  /** The map view's size in CSS px. */
+  viewSize(): { width: number; height: number };
+  /** The largest scale the GPU can render the map view at. */
+  maxScale(): number;
+  /** The map rendered at `scale` output px per CSS px, with the point names on it. */
+  capture(scale: number): Promise<MapSnapshot>;
+}
+
+// Largest map canvas, in device px. MapLibre's default (4096) would cap a
+// 4K export of a tall view; past this, exports are reduced (see maxScale).
+const MAX_CANVAS_SIZE = 8192;
+// Give up waiting for tiles after this long and export what has loaded.
+const CAPTURE_TIMEOUT_MS = 15_000;
+
+/**
+ * Renders the map at `scale` and copies the first frame drawn once every tile
+ * has loaded. WebGL only keeps a frame readable while it is being drawn, so the
+ * copy happens in a render handler. Scales past the GPU's limit are reduced.
+ */
+function maxScale(map: MapLibreMap) {
+  const gl = map.getCanvas().getContext("webgl2") ?? map.getCanvas().getContext("webgl");
+  const maxSize = Math.min(MAX_CANVAS_SIZE, gl?.getParameter(gl.MAX_RENDERBUFFER_SIZE) ?? 4096);
+  const { width, height } = map.getContainer().getBoundingClientRect();
+  return maxSize / Math.max(width, height, 1);
+}
+
+async function captureMap(map: MapLibreMap, labels: Map<string, Marker>, requested: number): Promise<MapSnapshot> {
+  const origin = map.getContainer().getBoundingClientRect();
+  const scale = Math.min(requested, maxScale(map));
+
+  const previous = map.getPixelRatio();
+  map.setPixelRatio(scale);
+  try {
+    const canvas = await new Promise<HTMLCanvasElement>((resolve) => {
+      let force = false;
+      const timer = setTimeout(() => {
+        force = true;
+        map.triggerRepaint();
+      }, CAPTURE_TIMEOUT_MS);
+      const onRender = () => {
+        if (!force && !map.loaded()) return;
+        map.off("render", onRender);
+        clearTimeout(timer);
+        const source = map.getCanvas();
+        const copy = document.createElement("canvas");
+        copy.width = source.width;
+        copy.height = source.height;
+        copy.getContext("2d")?.drawImage(source, 0, 0);
+        resolve(copy);
+      };
+      map.on("render", onRender);
+      map.triggerRepaint();
+    });
+
+    const names: ExportLabel[] = [];
+    for (const marker of labels.values()) {
+      const el = marker.getElement();
+      const r = el.getBoundingClientRect();
+      if (r.right < origin.left || r.left > origin.right || r.bottom < origin.top || r.top > origin.bottom) continue;
+      names.push({
+        text: el.textContent ?? "",
+        x: r.left - origin.left,
+        y: r.top - origin.top,
+        width: r.width,
+        height: r.height,
+        faded: el.dataset.faded === "true",
+      });
+    }
+    return { canvas, width: origin.width, height: origin.height, scale: canvas.width / origin.width, labels: names };
+  } finally {
+    map.setPixelRatio(previous);
+  }
+}
 
 // Points are SDF shape icons so colour, size, shape and outline can vary per point.
 const NODE_RADIUS: ExpressionSpecification = ["coalesce", ["get", "radius"], RADIUS.default];
@@ -121,14 +214,18 @@ export default function MapView({
   dataset,
   pointStyles = null,
   flowStyles = null,
+  lineStyle = DEFAULT_LINE_STYLE,
   filter = null,
   bottomInset = FIT_PADDING.bottom,
   isolated = null,
   onPointDoubleClick,
+  exporterRef,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const labelsRef = useRef<Map<string, Marker>>(new Map());
+  // Flows currently shown (after the filter and isolation); the dash animation reads it every frame.
+  const shownFlowsRef = useRef(0);
   const i18n = useI18n();
   const i18nRef = useRef(i18n); // for click handlers
   const onPointDoubleClickRef = useRef(onPointDoubleClick);
@@ -150,6 +247,7 @@ export default function MapView({
       center: [-82.35, 29.65],
       zoom: 11,
       attributionControl: false,
+      maxCanvasSize: [MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
     });
     mapRef.current = map;
 
@@ -308,6 +406,25 @@ export default function MapView({
     };
   }, []);
 
+  useEffect(() => {
+    if (!exporterRef || !ready) return;
+    exporterRef.current = {
+      viewSize: () => {
+        const { width, height } = containerRef.current?.getBoundingClientRect() ?? { width: 0, height: 0 };
+        return { width, height };
+      },
+      maxScale: () => (mapRef.current ? maxScale(mapRef.current) : Infinity),
+      capture: (scale) => {
+        const map = mapRef.current;
+        if (!map) return Promise.reject(new Error("The map is not ready."));
+        return captureMap(map, labelsRef.current, scale);
+      },
+    };
+    return () => {
+      exporterRef.current = null;
+    };
+  }, [exporterRef, ready]);
+
   // Push the dataset into the map whenever it changes.
   useEffect(() => {
     const map = mapRef.current;
@@ -431,7 +548,12 @@ export default function MapView({
       if (isolated && !isolatedIds.has(edge.source) && !isolatedIds.has(edge.target)) continue;
       shownFlows++;
     }
-    map.setLayoutProperty("edge-arrows", "visibility", shownFlows <= MAX_ARROWS ? "visible" : "none");
+    shownFlowsRef.current = shownFlows;
+    map.setLayoutProperty(
+      "edge-arrows",
+      "visibility",
+      lineStyle.arrows && shownFlows <= MAX_DECORATED_FLOWS ? "visible" : "none"
+    );
     for (const layer of ["edges", "edge-arrows", "edges-hit"]) map.setFilter(layer, flowFilter);
 
     const pointTests: ExpressionSpecification[] = [];
@@ -451,7 +573,44 @@ export default function MapView({
       el.style.zIndex = faded ? "0" : "1";
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `steps`/`isolated` are tracked by their keys
-  }, [dataset, stepsKey, flowSteps, pointSteps, isolatedKey, connected, ready]);
+  }, [dataset, stepsKey, flowSteps, pointSteps, isolatedKey, connected, lineStyle.arrows, ready]);
+
+  // The colour picked for the flows (arrowheads follow it); a Color column still wins.
+  const pickedColor = lineStyle.color;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const color = edgeColor(pickedColor);
+    map.setPaintProperty("edges", "line-color", color);
+    map.setPaintProperty("edge-arrows", "icon-color", color);
+  }, [pickedColor, ready]);
+
+  // Dash pattern of the flows, moving along them when animated. Dashed lines get
+  // flat ends (round ones would close the gaps); solid keeps the round default.
+  const { dash, animate } = lineStyle;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const pattern = DASH_PATTERNS[dash];
+    map.setLayoutProperty("edges", "line-cap", pattern ? "butt" : "round");
+    map.setPaintProperty("edges", "line-dasharray", pattern ? [...pattern] : undefined);
+    if (!pattern || !animate) return;
+
+    const frames = dashFrames(pattern, DASH_FRAME_COUNT);
+    // -1 is the plain pattern, shown while too many flows are visible to animate.
+    let shown = -1;
+    let raf = 0;
+    const tick = (now: number) => {
+      const next = shownFlowsRef.current > MAX_DECORATED_FLOWS ? -1 : Math.floor((now / DASH_CYCLE_MS) * DASH_FRAME_COUNT) % DASH_FRAME_COUNT;
+      if (next !== shown) {
+        shown = next;
+        map.setPaintProperty("edges", "line-dasharray", next < 0 ? [...pattern] : frames[next]);
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [dash, animate, ready]);
 
   return (
     <div className="relative isolate h-full w-full">

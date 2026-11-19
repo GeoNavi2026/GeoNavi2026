@@ -21,7 +21,8 @@ function iconFor(section: LegendSection): StyleIconKind {
   return section.target === "flows" ? "flowColor" : "color";
 }
 
-function titleFor(section: LegendSection) {
+/** The i18n key for a legend section's title, e.g. "Color" or "Flow width". */
+export function legendTitleKey(section: LegendSection) {
   return section.target === "flows"
     ? TITLES.flows[section.channel as "color" | "width"]
     : TITLES.points[section.channel as "color" | "size" | "shape"];
@@ -59,7 +60,7 @@ export default function MapLegend({ sections }: { sections: LegendSection[] }) {
               className="flex w-full cursor-pointer items-center gap-[6px] rounded-[4px] text-left outline-offset-2 focus-visible:outline-2 focus-visible:outline-accent-text"
             >
               <StyleIcon kind={iconFor(section)} />
-              <span className="text-[11px] leading-[16px] font-semibold whitespace-nowrap text-ink">{t(titleFor(section))}</span>
+              <span className="text-[11px] leading-[16px] font-semibold whitespace-nowrap text-ink">{t(legendTitleKey(section))}</span>
               <span className="min-w-0 flex-1 truncate font-mono text-[11px] leading-[16px] text-ink-muted">{section.column}</span>
               <img
                 src="/figma/icon-chevron-down.svg"

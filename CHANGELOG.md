@@ -7,8 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- "Export map" button in the sidebar header, between the logo and "New
+  upload": saves the current map view as a PNG or JPEG at the current view's
+  resolution, Full HD (1920 px wide) or 4K (3840 px wide), keeping the view's
+  shape. The image includes the point names, the legend (optional) and the
+  OpenStreetMap attribution, but not the app's controls or filter bar. Sizes
+  are capped at what the browser's GPU can render, and the panel lists the
+  size you will get.
+- Flow lines section in the sidebar (shown when the data has flows), for the
+  look of the lines whatever the columns say: a colour (swatches or any custom
+  colour; the default is still light to dark blue by weight, and a column set
+  to Color overrides it), a line style (solid, dashed,
+  dotted, dash-dot, long dash), an Animate switch that slides the dashes from
+  each flow's origin to its destination, and an Arrows switch for the
+  arrowheads. The section sits below the columns. Arrows and animation switch
+  off while more than 10,000 flows are shown, and come back once the filter
+  bar or isolation narrows them.
+- Flow CSVs no longer need the US Census (CTPP) column names. Origin and
+  destination coordinates are found by name in English or Portuguese
+  (`O_lat`, `origin_lat`, `latitude_origem`, ...); id and flow size columns
+  are optional (each row counts as 1 without one). Semicolon separators and
+  Brazilian number formats (`-23,55`, `1.234`) are read correctly, and `hora`
+  is recognised as a time column.
+- `data/test/sao_paulo_viagens.csv`: fictional São Paulo commute flows in
+  Brazilian CSV format, for demos with the Brazil team.
+
 ### Changed
 
+- Flow arrowheads are now off until the Arrows switch in the Flow lines section
+  is turned on; they used to be always drawn.
 - Time is no longer a style option. The bar at the bottom of the map is now an
   always-visible filter bar with a column picker: it steps through the values
   of the picked column (hours for time columns, values or ranges for numbers,
