@@ -27,6 +27,7 @@ import {
 } from "@/lib/point-style";
 import { buildFilterAxis } from "@/lib/filter-axis";
 import { DEFAULT_LINE_STYLE, type FlowLineStyle } from "@/lib/flow-line-style";
+import { composeExport, downloadBlob, exportFileName, exportResolutions } from "@/lib/map-export";
 import { useUpload } from "@/lib/upload-store";
 import { useI18n } from "@/lib/i18n";
 import { useFileUpload } from "@/lib/use-file-upload";
@@ -34,10 +35,12 @@ import Button from "./Button";
 import ColumnItem from "./ColumnItem";
 import ColumnStyleControl from "./ColumnStyleControl";
 import DashedOutline from "./DashedOutline";
+import ExportMapButton, { type ExportOptions } from "./ExportMapButton";
 import FlowLineControls from "./FlowLineControls";
 import LanguageToggle from "./LanguageToggle";
 import Logo from "./Logo";
-import MapLegend from "./MapLegend";
+import MapLegend, { legendTitleKey } from "./MapLegend";
+import type { MapExporter } from "./MapView";
 import FilterBar, { type FilterColumnOption, type FilterMode } from "./FilterBar";
 
 // MapLibre needs `window`, so never render the map on the server.
@@ -53,7 +56,7 @@ const FILTER_BAR_SPACE = 210;
 export default function MapScreen() {
   const router = useRouter();
   const { upload, setUpload } = useUpload();
-  const { t, plural } = useI18n();
+  const { t, plural, formatNumber, formatValue } = useI18n();
 
   // Nothing uploaded (e.g. a page refresh): go back to the upload screen.
   useEffect(() => {
@@ -75,6 +78,8 @@ export default function MapScreen() {
   const { busy, error, uploadFile, openPicker, inputProps } = useFileUpload(setUpload);
   // Counts nested dragenter/dragleave pairs so the overlay doesn't flicker over child elements.
   const dragDepth = useRef(0);
+  // Set by the map once it is ready; "Export map" captures through it.
+  const exporterRef = useRef<MapExporter | null>(null);
   const [dragging, setDragging] = useState(false);
 
   // New data: start from a clean slate (no styles, paused).
@@ -141,6 +146,10 @@ export default function MapScreen() {
     () => (upload ? computeFlowStyles(upload.dataset, flowStyle, profiles) : null),
     [upload, flowStyle, profiles]
   );
+  const legendSections = useMemo(
+    () => [...(pointStyles?.legend ?? []), ...(flowStyles?.legend ?? [])],
+    [pointStyles, flowStyles]
+  );
 
   // Esc shows every flow again.
   useEffect(() => {
@@ -166,6 +175,24 @@ export default function MapScreen() {
   }, [playing, peakStep, stepCount]);
 
   if (!upload) return null;
+
+  // "Export map": the map at the picked resolution, with its names, legend and attribution.
+  async function exportMap({ format, resolution, legend }: ExportOptions) {
+    const exporter = exporterRef.current;
+    if (!exporter || !upload) throw new Error(t("export.notReady"));
+    const snapshot = await exporter.capture(resolution.scale);
+    const blob = await composeExport(snapshot, {
+      format,
+      legend: legend ? legendSections : [],
+      text: {
+        title: (section) => t(legendTitleKey(section)),
+        formatValue,
+        more: (n) => t("export.more", { n: formatNumber(n) }),
+        attribution: `MapLibre | © OpenStreetMap ${t("map.contributors")}`,
+      },
+    });
+    downloadBlob(blob, exportFileName(upload.fileName, format));
+  }
 
   return (
     <div
@@ -196,9 +223,21 @@ export default function MapScreen() {
       <aside className="flex max-h-[45dvh] w-full shrink-0 flex-col gap-[20px] overflow-y-auto border-line bg-surface p-[20px] max-md:border-b md:h-full md:max-h-none md:w-[340px] md:border-r">
         <div className="flex w-full items-center justify-between">
           <Logo size="sm" as="h1" />
-          <Button variant="secondary" onClick={openPicker} disabled={busy !== null}>
-            {t("map.newUpload")}
-          </Button>
+          <div className="flex items-center gap-[8px]">
+            <ExportMapButton
+              getResolutions={() => {
+                const exporter = exporterRef.current;
+                const view = exporter?.viewSize() ?? { width: 0, height: 0 };
+                return exportResolutions(view.width, view.height, window.devicePixelRatio, exporter?.maxScale());
+              }}
+              hasLegend={legendSections.length > 0}
+              disabled={busy !== null}
+              onExport={exportMap}
+            />
+            <Button variant="secondary" onClick={openPicker} disabled={busy !== null}>
+              {t("map.newUpload")}
+            </Button>
+          </div>
           <input {...inputProps} />
         </div>
 
@@ -289,6 +328,7 @@ export default function MapScreen() {
           filter={filterAxis ? { target: filterAxis.target, stepOf: filterAxis.stepOf, steps: selection } : null}
           bottomInset={FILTER_BAR_SPACE}
           isolated={isolated}
+          exporterRef={exporterRef}
           onPointDoubleClick={(id, { additive }) => {
             // Isolate the flows starting or ending at this point. Ctrl/⌘ adds or
             // removes it from the isolated points; double-clicking the only
@@ -330,7 +370,7 @@ export default function MapScreen() {
         {/* Legend sits above the filter bar. */}
         <div className="pointer-events-none absolute top-[16px] bottom-[164px] left-[16px] flex items-end">
           <div className="pointer-events-auto max-h-full">
-            <MapLegend key={datasetId} sections={[...(pointStyles?.legend ?? []), ...(flowStyles?.legend ?? [])]} />
+            <MapLegend key={datasetId} sections={legendSections} />
           </div>
         </div>
         <div className="pointer-events-none absolute inset-x-[16px] bottom-[42px]">

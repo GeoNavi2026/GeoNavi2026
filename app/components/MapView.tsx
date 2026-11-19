@@ -4,7 +4,7 @@
 // OpenStreetMap base map with the selected dataset drawn on top, styled to
 // the Figma "Map view". Browser-only: load it through next/dynamic with ssr: false.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { FeatureCollection } from "geojson";
 import {
   Map as MapLibreMap,
@@ -31,6 +31,7 @@ import {
 import { DEFAULT_POINT_COLOR, FLOW_WIDTH, RADIUS, type FlowStyles, type PointStyles } from "@/lib/point-style";
 import { ARROW_IMAGE, arrowSdf, ICON_UNIT_RADIUS_CSS, SHAPES, shapeImageName, shapeSdf } from "@/lib/shapes";
 import type { FilterTarget } from "@/lib/filter-axis";
+import type { ExportLabel, MapSnapshot } from "@/lib/map-export";
 import { toGeoJson } from "@/lib/to-geojson";
 import type { DatasetResponse } from "@/lib/types";
 
@@ -116,7 +117,84 @@ type MapViewProps = {
    * when it was handled to skip the map's double-click zoom.
    */
   onPointDoubleClick?: (id: string, options: { additive: boolean }) => boolean;
+  /** Set to the map's exporter while the map is mounted, for "Export map". */
+  exporterRef?: RefObject<MapExporter | null>;
 };
+
+export interface MapExporter {
+  /** The map view's size in CSS px. */
+  viewSize(): { width: number; height: number };
+  /** The largest scale the GPU can render the map view at. */
+  maxScale(): number;
+  /** The map rendered at `scale` output px per CSS px, with the point names on it. */
+  capture(scale: number): Promise<MapSnapshot>;
+}
+
+// Largest map canvas, in device px. MapLibre's default (4096) would cap a
+// 4K export of a tall view; past this, exports are reduced (see maxScale).
+const MAX_CANVAS_SIZE = 8192;
+// Give up waiting for tiles after this long and export what has loaded.
+const CAPTURE_TIMEOUT_MS = 15_000;
+
+/**
+ * Renders the map at `scale` and copies the first frame drawn once every tile
+ * has loaded. WebGL only keeps a frame readable while it is being drawn, so the
+ * copy happens in a render handler. Scales past the GPU's limit are reduced.
+ */
+function maxScale(map: MapLibreMap) {
+  const gl = map.getCanvas().getContext("webgl2") ?? map.getCanvas().getContext("webgl");
+  const maxSize = Math.min(MAX_CANVAS_SIZE, gl?.getParameter(gl.MAX_RENDERBUFFER_SIZE) ?? 4096);
+  const { width, height } = map.getContainer().getBoundingClientRect();
+  return maxSize / Math.max(width, height, 1);
+}
+
+async function captureMap(map: MapLibreMap, labels: Map<string, Marker>, requested: number): Promise<MapSnapshot> {
+  const origin = map.getContainer().getBoundingClientRect();
+  const scale = Math.min(requested, maxScale(map));
+
+  const previous = map.getPixelRatio();
+  map.setPixelRatio(scale);
+  try {
+    const canvas = await new Promise<HTMLCanvasElement>((resolve) => {
+      let force = false;
+      const timer = setTimeout(() => {
+        force = true;
+        map.triggerRepaint();
+      }, CAPTURE_TIMEOUT_MS);
+      const onRender = () => {
+        if (!force && !map.loaded()) return;
+        map.off("render", onRender);
+        clearTimeout(timer);
+        const source = map.getCanvas();
+        const copy = document.createElement("canvas");
+        copy.width = source.width;
+        copy.height = source.height;
+        copy.getContext("2d")?.drawImage(source, 0, 0);
+        resolve(copy);
+      };
+      map.on("render", onRender);
+      map.triggerRepaint();
+    });
+
+    const names: ExportLabel[] = [];
+    for (const marker of labels.values()) {
+      const el = marker.getElement();
+      const r = el.getBoundingClientRect();
+      if (r.right < origin.left || r.left > origin.right || r.bottom < origin.top || r.top > origin.bottom) continue;
+      names.push({
+        text: el.textContent ?? "",
+        x: r.left - origin.left,
+        y: r.top - origin.top,
+        width: r.width,
+        height: r.height,
+        faded: el.dataset.faded === "true",
+      });
+    }
+    return { canvas, width: origin.width, height: origin.height, scale: canvas.width / origin.width, labels: names };
+  } finally {
+    map.setPixelRatio(previous);
+  }
+}
 
 // Points are SDF shape icons so colour, size, shape and outline can vary per point.
 const NODE_RADIUS: ExpressionSpecification = ["coalesce", ["get", "radius"], RADIUS.default];
@@ -141,6 +219,7 @@ export default function MapView({
   bottomInset = FIT_PADDING.bottom,
   isolated = null,
   onPointDoubleClick,
+  exporterRef,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -168,6 +247,7 @@ export default function MapView({
       center: [-82.35, 29.65],
       zoom: 11,
       attributionControl: false,
+      maxCanvasSize: [MAX_CANVAS_SIZE, MAX_CANVAS_SIZE],
     });
     mapRef.current = map;
 
@@ -325,6 +405,25 @@ export default function MapView({
       setReady(false);
     };
   }, []);
+
+  useEffect(() => {
+    if (!exporterRef || !ready) return;
+    exporterRef.current = {
+      viewSize: () => {
+        const { width, height } = containerRef.current?.getBoundingClientRect() ?? { width: 0, height: 0 };
+        return { width, height };
+      },
+      maxScale: () => (mapRef.current ? maxScale(mapRef.current) : Infinity),
+      capture: (scale) => {
+        const map = mapRef.current;
+        if (!map) return Promise.reject(new Error("The map is not ready."));
+        return captureMap(map, labelsRef.current, scale);
+      },
+    };
+    return () => {
+      exporterRef.current = null;
+    };
+  }, [exporterRef, ready]);
 
   // Push the dataset into the map whenever it changes.
   useEffect(() => {
